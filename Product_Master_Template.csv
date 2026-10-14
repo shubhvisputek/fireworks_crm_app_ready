@@ -1,0 +1,6 @@
+﻿Product Code / SKU,Product Name,Category,Subcategory,Unit,Units per Box,Boxes per Carton,Units per Carton,Cost Price,MRP,Retail Selling Price,Wholesale Selling Price,GST Rate,Compensation Cess Rate,HSN Code,Opening Stock,Minimum Stock / Reorder Level,Brand / Manufacturer,Batch/Lot if available,Product Status
+SKU-001,Classic Sparkler 10cm,Sparklers,Ground,Box,10,12,120,45,135,99,85,18,0,3604,50,10,Sample Brand,B001,ACTIVE
+SKU-002,Color Flower Pot,Flower Pots,Ground,Box,1,12,12,80,240,175,150,18,0,3604,30,5,Sample Brand,B002,ACTIVE
+SKU-003,Sky Burst,Aerial Shots,Aerial,Box,1,12,12,160,480,350,300,18,0,3604,15,5,Sample Brand,B003,ACTIVE
+SKU-004,Whistling Rocket,Rockets,Aerial,Box,1,12,12,60,180,135,115,18,0,3604,20,5,Sample Brand,B004,ACTIVE
+SKU-005,Diwali Gift Pack,Gift Boxes,Combo,Box,1,6,6,500,1200,950,820,18,0,3604,10,3,Sample Brand,B005,ACTIVE
