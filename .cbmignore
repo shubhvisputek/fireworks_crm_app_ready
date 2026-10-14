@@ -1,0 +1,6 @@
+# Exclude local application and customer data from the code graph.
+.venv/
+__pycache__/
+data/
+bills/
+exports/
