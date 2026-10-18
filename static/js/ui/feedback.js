@@ -114,6 +114,13 @@ registerActions({
 
 $('#toast')?.addEventListener('click', () => $('#toast').classList.remove('show'));
 
+// An open "More" menu closes when you click elsewhere or pick an action in it.
+document.addEventListener('click', (event) => {
+  for (const menu of document.querySelectorAll('details.menu[open]')) {
+    if (!menu.contains(event.target) || event.target.closest('.menu-items .button')) menu.open = false;
+  }
+});
+
 // Clicking the dimmed backdrop (outside the dialog box) closes the modal.
 document.addEventListener('click', (event) => {
   if (event.target.id === 'modal') closeModal();

@@ -381,13 +381,20 @@ export function waterfall(steps, { format = money, axisFormat = compactMoney, he
     </svg>`;
 }
 
-/** A ratio against a limit, e.g. sales vs target. */
-export function meter({ label, value, limit, format = money, sub = '' }) {
+/**
+ * A ratio against a limit. For a target (sales) reaching 100% is good; with ceiling=true (licence storage)
+ * nearing the limit is a warning and going over it is critical.
+ */
+export function meter({ label, value, limit, format = money, sub = '', ceiling = false }) {
   const ratio = limit ? value / limit : 0;
-  const done = ratio >= 1;
-  return html`<div class="meter">
+  let status = '';
+  if (ceiling && ratio > 1) status = html` <span class="tag bad">⛔ Over the limit</span>`;
+  else if (ceiling && ratio >= 0.9) status = html` <span class="tag warn">⚠ Nearly full</span>`;
+  else if (!ceiling && ratio >= 1) status = html` <span class="tag good">✓ Reached</span>`;
+  const level = ceiling ? (ratio > 1 ? 'over' : ratio >= 0.9 ? 'near' : '') : '';
+  return html`<div class="meter ${level}">
     <div class="between"><span class="small">${label}</span>
-      <span class="small"><strong>${pct(Math.round(ratio * 1000) / 10)}</strong>${done ? html` <span class="tag good">✓ Reached</span>` : ''}</span></div>
+      <span class="small"><strong>${pct(Math.round(ratio * 1000) / 10)}</strong>${status}</span></div>
     <div class="meter-track" role="meter" aria-valuemin="0" aria-valuemax="${limit}" aria-valuenow="${value}" aria-label="${label}">
       <div style="width:${Math.min(100, ratio * 100)}%"></div></div>
     <div class="small muted">${format(value)} of ${format(limit)}${sub ? html` • ${sub}` : ''}</div>

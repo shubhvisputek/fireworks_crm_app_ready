@@ -4,10 +4,10 @@ from crm.domain import validation as v
 from crm.errors import ValidationError
 from crm.services.base import Service
 
-TEXT_SETTINGS = ('business_name', 'address', 'gstin', 'license_number', 'phone', 'email', 'logo', 'state', 'state_code',
+TEXT_SETTINGS = ('business_name', 'address', 'license_number', 'phone', 'email', 'logo', 'state', 'state_code',
                  'invoice_prefix', 'invoice_footer', 'walk_in_name')
 BOOL_SETTINGS = ('negative_stock_allowed', 'batch_tracking')
-NUMBER_SETTINGS = ('default_gst_rate', 'default_cess_rate', 'storage_limit_kg')
+NUMBER_SETTINGS = ('storage_limit_kg',)
 RECEIPT_FORMATS = ('A4', '80MM')
 THEMES = ('classic', 'clean', 'festive', 'counter', 'royal', 'soft')  # must match static/themes.css
 TARGET_FIELDS = ('daily', 'weekly', 'monthly', 'seasonal')

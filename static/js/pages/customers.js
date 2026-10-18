@@ -6,7 +6,7 @@ import { registerPage } from '../core/router.js';
 import { closeModal, formModal, toast } from '../ui/feedback.js';
 import { table } from '../ui/widgets.js';
 
-const TYPES = [['WHOLESALE', 'Wholesale'], ['RETAIL', 'Retail']];
+const TYPES = [['RETAIL', 'Retail'], ['WHOLESALE', 'Wholesale']];
 
 function render() {
   setHtml($('#page'), html`${can('customers.manage') ? html`<div class="row"><button class="button primary" data-action="customers.add">+ Customer</button></div><br>` : ''}
@@ -18,7 +18,7 @@ function render() {
 registerActions({
   'customers.add': () => formModal('New Customer', [
     { name: 'name', label: 'Name', required: true }, { name: 'phone', label: 'Phone', type: 'tel' },
-    { name: 'customer_type', label: 'Type', type: 'select', value: 'WHOLESALE', options: TYPES },
+    { name: 'customer_type', label: 'Type', type: 'select', value: 'RETAIL', options: TYPES },
     { name: 'address', label: 'Address' }, { name: 'notes', label: 'Notes', type: 'textarea', full: true },
   ], 'customers.save'),
   'customers.save': async (form) => {

@@ -24,7 +24,7 @@ async function render() {
 
 registerActions({
   'suppliers.add': () => formModal('New Supplier', [
-    { name: 'name', label: 'Name', required: true }, { name: 'phone', label: 'Phone', type: 'tel' }, { name: 'gstin', label: 'GSTIN' },
+    { name: 'name', label: 'Name', required: true }, { name: 'phone', label: 'Phone', type: 'tel' },
     { name: 'address', label: 'Address' }, { name: 'notes', label: 'Notes', type: 'textarea', full: true },
   ], 'suppliers.save'),
   'suppliers.save': async (form) => {

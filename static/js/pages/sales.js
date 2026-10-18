@@ -25,16 +25,20 @@ function history(x) {
 }
 
 // Only the actions this user is allowed to take are shown (the server enforces the same rules).
+// The everyday actions stay visible; the rest sit in a "More" menu so the table fits the screen.
 function actions(x) {
-  const print = can('invoices.print') ? html`<button class="button" data-action="sales.pdf" data-id="${x.id}">PDF</button>
-    <button class="button" data-action="sales.receipt" data-id="${x.id}">Receipt</button>` : '';
+  const pdf = can('invoices.print') ? html`<button class="button" data-action="sales.pdf" data-id="${x.id}">PDF</button>` : '';
+  const receipt = can('invoices.print') ? html`<button class="button" data-action="sales.receipt" data-id="${x.id}">Receipt (80 mm)</button>` : '';
   const share = x.customer_phone ? html`<button class="button" data-action="sales.whatsapp" data-id="${x.id}" title="Send bill on WhatsApp">WhatsApp</button>` : '';
-  if (x.status !== 'FINALIZED') return print;
-  return html`${print}${share}
-    ${can('sales.edit') ? html`<button class="button" data-action="sales.edit" data-id="${x.id}">Edit</button>` : ''}
-    ${x.outstanding > 0 && can('payments.collect') ? html`<button class="button" data-action="sales.collect" data-id="${x.id}">Collect</button>` : ''}
-    ${can('returns.create') ? html`<button class="button" data-action="sales.return" data-id="${x.id}">Return</button>` : ''}
-    ${can('sales.void') ? html`<button class="button danger" data-action="sales.void" data-id="${x.id}" data-number="${x.invoice_number}">Delete</button>` : ''}`;
+  const finalized = x.status === 'FINALIZED';
+  const more = [receipt, share,
+    finalized && can('returns.create') ? html`<button class="button" data-action="sales.return" data-id="${x.id}">Return items</button>` : '',
+    finalized && can('sales.void') ? html`<button class="button danger" data-action="sales.void" data-id="${x.id}" data-number="${x.invoice_number}">Delete</button>` : '',
+  ].filter(Boolean);
+  return html`${pdf}
+    ${finalized && can('sales.edit') ? html`<button class="button" data-action="sales.edit" data-id="${x.id}">Edit</button>` : ''}
+    ${finalized && x.outstanding > 0 && can('payments.collect') ? html`<button class="button" data-action="sales.collect" data-id="${x.id}">Collect</button>` : ''}
+    ${more.length ? html`<details class="menu"><summary class="button" aria-label="More actions">More ▾</summary><div class="menu-items">${more}</div></details>` : ''}`;
 }
 
 async function render() {

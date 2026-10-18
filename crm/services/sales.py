@@ -117,9 +117,10 @@ class SalesService(Service):
                 cost = float(product['cost_price'] or 0)
                 self.repos.invoices.add_item({
                     'invoice_id': invoice_id, 'product_id': product['id'], 'sku_snapshot': product['sku'], 'product_name_snapshot': product['name'],
-                    'hsn_snapshot': product['hsn'], 'qty_input': line['qty'], 'sell_unit': product['unit'], 'qty_base': line['qty'],
+                    'hsn_snapshot': None, 'qty_input': line['qty'], 'sell_unit': product['unit'], 'qty_base': line['qty'],
                     'unit_price': line['price'], 'original_price': line['price'], 'discount': line['discount'], 'taxable_amount': line['net'],
-                    'gst_rate': 0, 'cess_rate': 0, 'gst_amount': 0, 'cost_snapshot': cost,
+                    'gst_rate': 0, 'cess_rate': 0, 'gst_amount': 0,  # no tax in this app; old columns that must be filled
+                    'cost_snapshot': cost,
                     'manual_override_reason': v.optional_text(data.get('override_reason')),
                 })
                 self.repos.inventory.add_movement(product['id'], 'SALE', -line['qty'], now, unit_cost=cost, ref_type='INVOICE',

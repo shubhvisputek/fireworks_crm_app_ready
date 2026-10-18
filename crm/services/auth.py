@@ -7,9 +7,13 @@ from crm.security import DUMMY_HASH, hash_password, verify_password
 from crm.services.base import Service
 
 MIN_PASSWORD_LENGTH = 8
-# Failed logins allowed per 15 minutes. Per username *and* address, so one attacker can't lock the owner out
-# for everyone; per address, against guessing many accounts; per username overall, against many addresses.
-PAIR_LIMIT, IP_LIMIT, USER_LIMIT = 10, 30, 100
+# Failed logins allowed per 15 minutes. Wrong passwords only ever lock *that username* on *that browser/address*:
+# - on a browser where the user has signed in before (trusted device), only that browser's own mistakes count;
+# - elsewhere, failures count per username + address, and per username across all untrusted places (slows
+#   guessing from many addresses) - which never locks the user's trusted browsers.
+# Other users are never affected by someone else's wrong passwords.
+SOURCE_LIMIT, UNTRUSTED_USER_LIMIT = 10, 100
+MAX_TRUSTED_USERS = 20  # users remembered per browser (a shared counter computer)
 # The demo password and the most common passwords are refused when setting a password.
 WEAK_PASSWORDS = frozenset({'admin123', 'password', 'password1', 'password123', '12345678', '123456789',
                             '1234567890', 'qwerty123', 'iloveyou', 'admin1234', 'welcome1', 'fireworks', 'abcd1234'})
@@ -32,19 +36,31 @@ class AuthService(Service):
         super().__init__(*args, **kwargs)
         self.throttle = throttle
 
-    def login(self, username, password, client_ip=''):
+    def login(self, username, password, client_ip='', device=None):
+        """device: the verified trusted-device cookie of this browser, if any."""
         name = str(username or '').strip().lower()
-        keys = {f'login:{name}|{client_ip}': PAIR_LIMIT, f'login-ip:{client_ip}': IP_LIMIT, f'login-user:{name}': USER_LIMIT}
-        if any(self.throttle.is_blocked(key, limit=limit) for key, limit in keys.items()):
-            raise RateLimited('Too many failed login attempts. Try again in 15 minutes.')
         user = self.repos.users.get_active_by_username(str(username or ''))
+        trusted = bool(user and device and user['id'] in device.get('uids', []))
+        if trusted:
+            keys = {f'login:{name}|device:{device["dev"]}': SOURCE_LIMIT}
+        else:
+            keys = {f'login:{name}|ip:{client_ip}': SOURCE_LIMIT, f'login:{name}|untrusted': UNTRUSTED_USER_LIMIT}
+        if any(self.throttle.is_blocked(key, limit=limit) for key, limit in keys.items()):
+            raise RateLimited(f'Too many wrong passwords for {name or "this user"}. Try again in 15 minutes, '
+                              'or sign in from a device you have used before.')
         valid = verify_password(str(password or ''), user['password_hash'] if user else DUMMY_HASH)
         if not user or not valid:
             for key in keys:
                 self.throttle.record_failure(key)
             raise AuthenticationError('Invalid username or password')
-        self.throttle.reset(f'login:{name}|{client_ip}')
+        self.throttle.reset(next(iter(keys)))
         return user
+
+    def device_payload(self, user, device=None):
+        """Trusted-device cookie contents: a random browser id and the users who signed in on it."""
+        uids = [uid for uid in (device or {}).get('uids', []) if uid != user['id']][-(MAX_TRUSTED_USERS - 1):] + [user['id']]
+        return {'kind': 'device', 'dev': (device or {}).get('dev') or secrets.token_hex(16), 'uids': uids,
+                'exp': self.clock.timestamp() + 365 * 86400}
 
     def verify_credentials(self, username, password, purpose='approval'):
         """Check another user's password (e.g. a manager approving a discount). Throttled like logins."""

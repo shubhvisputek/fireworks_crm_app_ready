@@ -20,7 +20,7 @@ class CustomerService(Service):
             code = v.text(data.get('customer_code'), 30) or self._next_code()
             values = {
                 'customer_code': code, 'name': name, 'phone': v.optional_text(data.get('phone'), 20),
-                'address': v.optional_text(data.get('address')), 'gstin': v.optional_text(data.get('gstin'), 20),
+                'address': v.optional_text(data.get('address')), 
                 'customer_type': v.text(data.get('customer_type'), 20).upper() or 'RETAIL',
                 'credit_enabled': int(v.parse_bool(data.get('credit_enabled'))),
                 'credit_limit': v.amount(data.get('credit_limit'), 'Credit limit', default=0.0),

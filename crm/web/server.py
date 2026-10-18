@@ -57,7 +57,8 @@ def make_handler(app):
             self.send_header('Content-Length', str(len(response.body)))
             self.send_header('Cache-Control', response.headers.pop('Cache-Control', 'no-store'))
             for key, value in {**SECURITY_HEADERS, **response.headers}.items():
-                self.send_header(key, value)
+                for item in value if isinstance(value, list) else [value]:  # a list sends the header once per value
+                    self.send_header(key, item)
             self.end_headers()
             if not head:
                 self.wfile.write(response.body)

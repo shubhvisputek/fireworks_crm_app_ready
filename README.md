@@ -71,6 +71,8 @@ Open `http://localhost:8000` and sign in as `admin` / `admin123`, then change th
 - **Barcodes:** set a barcode per product; scanning it in Billing adds the item.
 - **Thermal receipts and WhatsApp:** 80 mm receipt PDF (choose A4 or 80 mm in Settings for after-billing printing); send a bill summary to the customer on WhatsApp.
 - **Licence storage limit:** set explosive content per product (kg) and the licence limit in Settings. Stock-in that would exceed it asks for confirmation, and the dashboard warns when over.
+- **Wrong passwords:** after 10 wrong passwords, that username is paused for 15 minutes *on that browser or computer only*. Other users can still sign in, and the person's own usual browser (where they signed in before) keeps working even if someone else is guessing their password in another window.
+- **No tax:** prices are final; the app does not calculate or show GST or any other tax.
 - **Audit log:** every change, who made it and when, with before/after details. Filter by date, user and area.
 - **Backups:** an automatic database backup every day (keeps the last 30 by default), **Backup now**, download, and **restore** from the list or from a file (a safety copy is taken first). Also JSON export, summary and detailed Excel, PDF sales report.
 

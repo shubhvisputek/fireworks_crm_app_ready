@@ -93,7 +93,7 @@ class InventoryService(Service):
             purchase_id = self.repos.purchases.create({
                 'purchase_number': number, 'purchase_date': purchase_date, 'supplier_id': supplier_id,
                 'supplier_name': supplier, 'invoice_number': v.optional_text(data.get('invoice_number'), 64),
-                'subtotal': 0, 'gst': 0, 'freight': freight, 'total': 0, 'user_id': actor['id'], 'created_at': self.now(),
+                'subtotal': 0, 'freight': freight, 'total': 0, 'user_id': actor['id'], 'created_at': self.now(),
             })
             subtotal = 0.0
             for item, product in zip(items, products):

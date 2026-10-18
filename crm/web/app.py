@@ -21,6 +21,7 @@ from crm.web.router import AUTHENTICATED, PUBLIC, Router
 log = logging.getLogger('crm')
 
 COOKIE = 'fw_session'
+DEVICE_COOKIE = 'fw_device'  # signed: which users have signed in on this browser
 SECURITY_HEADERS = {
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
@@ -45,12 +46,20 @@ class RequestContext:
     def body(self):
         return self.request.json()
 
+    def set_cookie(self, cookie):
+        self.response_headers.setdefault('Set-Cookie', []).append(cookie)
+
     def start_session(self, user):
         token = self.app.signer.sign(self.services.auth.session_payload(user))
-        self.response_headers['Set-Cookie'] = self.app.session_cookie(urllib.parse.quote(token))
+        self.set_cookie(self.app.session_cookie(urllib.parse.quote(token)))
 
     def end_session(self):
-        self.response_headers['Set-Cookie'] = self.app.session_cookie('', max_age=0)
+        self.set_cookie(self.app.session_cookie('', max_age=0))
+
+    def trust_device(self, user, device):
+        """Remember that this user signed in on this browser (see AuthService.login)."""
+        token = self.app.signer.sign(self.services.auth.device_payload(user, device))
+        self.set_cookie(self.app.cookie(DEVICE_COOKIE, urllib.parse.quote(token), max_age=365 * 86400))
 
 
 class Application:
@@ -93,7 +102,10 @@ class Application:
 
     # --- sessions ---------------------------------------------------------
     def session_cookie(self, value, max_age=None):
-        parts = [f'{COOKIE}={value}', 'HttpOnly', 'SameSite=Lax', 'Path=/']
+        return self.cookie(COOKIE, value, max_age)
+
+    def cookie(self, name, value, max_age=None):
+        parts = [f'{name}={value}', 'HttpOnly', 'SameSite=Lax', 'Path=/']
         if max_age is not None:
             parts.append(f'Max-Age={max_age}')
         if self.config.secure_cookies:
@@ -101,7 +113,14 @@ class Application:
         return '; '.join(parts)
 
     def session_payload(self, request):
-        match = re.search(r'(?:^|;\s*)' + COOKIE + r'=([^;]+)', request.headers.get('Cookie', ''))
+        return self.signed_cookie(request, COOKIE)
+
+    def device_payload(self, request):
+        payload = self.signed_cookie(request, DEVICE_COOKIE)
+        return payload if payload and payload.get('kind') == 'device' else None
+
+    def signed_cookie(self, request, name):
+        match = re.search(r'(?:^|;\s*)' + name + r'=([^;]+)', request.headers.get('Cookie', ''))
         return self.signer.verify(urllib.parse.unquote(match.group(1))) if match else None
 
     # --- dispatch ---------------------------------------------------------

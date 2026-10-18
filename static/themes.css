@@ -211,3 +211,17 @@ body.is-loading::before{opacity:1;animation:loadbar 1.2s ease-in-out infinite}
 .list-search .input{padding-left:36px}
 .list-footer{display:flex;justify-content:center;gap:10px;margin-top:10px}.list-footer:has(.list-more.is-hidden):has(.list-none.is-hidden){display:none}
 .is-hidden{display:none!important}
+
+/* ---- Table actions: compact and wrapping, so wide tables (Sales) fit on desktop without sideways scrolling ---- */
+@media(min-width:641px){.table td:last-child .row{flex-wrap:wrap;gap:6px}.table td:last-child{white-space:normal;min-width:180px}
+  .table td .button{padding:6px 10px;font-size:13px;min-height:0}
+  /* Values stay on one line; only notes under a value (e.g. "Edited by ... Revised from ...") wrap, within a sensible width. */
+  .table td:first-child .small{white-space:normal;min-width:170px;max-width:230px}}
+.meter.near .meter-track div{background:#d97706}.meter.over .meter-track{background:var(--bad-soft)}.meter.over .meter-track div{background:var(--danger)}
+
+/* ---- "More" menu (secondary row actions) ---- */
+.menu{position:relative;display:inline-block}.menu>summary{list-style:none;cursor:pointer;user-select:none}.menu>summary::-webkit-details-marker{display:none}
+.menu-items{position:absolute;right:0;top:calc(100% + 4px);z-index:8;display:grid;gap:4px;min-width:170px;padding:6px;background:var(--surface-solid);
+  border:1px solid var(--line);border-radius:var(--r-sm);box-shadow:0 12px 30px rgba(15,23,42,.16)}
+.menu-items .button{width:100%;text-align:left;justify-content:flex-start}
+@media(max-width:640px){.menu{display:block;width:100%}.menu>summary{display:block;text-align:center}.menu-items{position:static;box-shadow:none;margin-top:6px}}

@@ -232,7 +232,7 @@ function stock(d) {
       ${statTile({ label: 'Out of stock', value: num(s.totals.out_of_stock), sub: s.totals.out_of_stock ? '⛔ Cannot be billed' : '✓ None' })}
       ${statTile({ label: 'Low stock', value: num(s.totals.low), sub: 'At or below the refill level' })}
     </div>
-    ${s.storage?.limit_kg ? card('Licence storage', meter({ label: 'Explosive content stored', value: s.storage.current_kg, limit: s.storage.limit_kg, format: (v) => `${num(v)} kg`,
+    ${s.storage?.limit_kg ? card('Licence storage', meter({ label: 'Explosive content stored', ceiling: true, value: s.storage.current_kg, limit: s.storage.limit_kg, format: (v) => `${num(v)} kg`,
       sub: s.storage.over ? '⚠ Over the licence limit' : 'Within the licence limit' })) : ''}
     ${card('Stock value by category', withTable(
       barList(s.categories.map((c) => ({ label: c.category, value: c.retail_value, color: color(c.category),

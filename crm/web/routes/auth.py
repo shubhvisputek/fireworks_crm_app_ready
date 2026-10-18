@@ -19,8 +19,10 @@ def login(ctx):
         body = ctx.body()
     except ValidationError:
         raise ValidationError('Invalid login request.')
-    user = ctx.services.auth.login(body.get('username', ''), body.get('password', ''), ctx.app.client_ip(ctx.request))
+    device = ctx.app.device_payload(ctx.request)
+    user = ctx.services.auth.login(body.get('username', ''), body.get('password', ''), ctx.app.client_ip(ctx.request), device)
     ctx.start_session(user)
+    ctx.trust_device(user, device)
     return {'ok': True, 'user': public_user(user), 'limits': shop_limits(ctx)}
 
 

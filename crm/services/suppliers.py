@@ -14,7 +14,7 @@ class SupplierService(Service):
         with self.transaction():
             if self.repos.suppliers.find_by_name(name):
                 raise ValidationError(f'Supplier {name} already exists.')
-            values = {'name': name, 'phone': v.optional_text(data.get('phone'), 20), 'gstin': v.optional_text(data.get('gstin'), 20),
+            values = {'name': name, 'phone': v.optional_text(data.get('phone'), 20), 
                       'address': v.optional_text(data.get('address')), 'notes': v.optional_text(data.get('notes')), 'created_at': self.now()}
             supplier_id = self.repos.suppliers.create(values)
             self.audit(actor, 'Supplier created', 'SUPPLIER', supplier_id, new=values)

@@ -73,6 +73,12 @@ async function confirmDialog(page, pattern) {
   await page.click('#confirm [data-confirm="yes"]');
 }
 
+// Secondary row actions (Return, Delete, Receipt, WhatsApp) sit in the row's "More" menu.
+async function moreAction(page, row, label) {
+  await page.click(`${row} summary:has-text("More")`);
+  await page.click(`${row} .menu-items button:has-text("${label}")`);
+}
+
 async function nav(page, label) {
   await clearToast(page);
   await page.click(`.nav button:has-text("${label}")`);
@@ -258,11 +264,11 @@ try {
   });
 
   await step('sales: return an item, then void blocked', async () => {
-    await page.click(`tr:has-text("${editedBill}") button:has-text("Return")`);
+    await moreAction(page, `tr:has-text("${editedBill}")`, 'Return');
     await page.fill('#modal .return-qty', '1');
     await page.click('#modal button:has-text("Process Return")');
     assert.match(await toastText(page), /Return RET-.* posted/);
-    await page.click(`tr:has-text("${editedBill}") button:has-text("Delete")`);
+    await moreAction(page, `tr:has-text("${editedBill}")`, 'Delete');
     await confirmDialog(page, /items go back into stock/);
     assert.match(await toastText(page), /posted return/);
   });
@@ -455,7 +461,7 @@ try {
     await nav(page, 'Sales');
     const receipt = context.waitForEvent('request', (r) => /\/api\/invoice-receipt\/\d+$/.test(r.url()));
     const receiptPopup = context.waitForEvent('page');
-    await page.click('tbody tr:first-child button:has-text("Receipt")');
+    await moreAction(page, 'tbody tr:first-child', 'Receipt');
     assert.equal((await (await receipt).response()).headers()['content-type'], 'application/pdf');
     (await receiptPopup).close();
   });

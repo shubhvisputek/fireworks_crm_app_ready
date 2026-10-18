@@ -43,16 +43,48 @@ class InProcessTestCase(unittest.TestCase):
         chunks = [raw]
         return self.app.handle(Request(method, path, hdrs, lambda n: chunks.pop() if chunks else b'', 1 << 20, client_ip=ip))
 
-    def test_one_attacker_cannot_lock_the_owner_out_for_everyone(self):
-        for i in range(12):
-            self.call('POST', '/api/login', {'username': 'admin', 'password': f'wrong{i}'}, ip='203.0.113.9')
-        self.assertEqual(self.call('POST', '/api/login', {'username': 'admin', 'password': 'nope'}, ip='203.0.113.9').status, 429)
-        self.assertEqual(self.call('POST', '/api/login', {'username': 'admin', 'password': 'admin123'}, ip='192.168.1.20').status, 200)
+    @staticmethod
+    def cookies(res, name):
+        values = res.headers.get('Set-Cookie', [])
+        return next((c.split(';')[0] for c in values if c.startswith(name + '=')), None)
 
-    def test_one_address_cannot_guess_many_accounts(self):
-        for i in range(30):
-            self.call('POST', '/api/login', {'username': f'user{i}', 'password': 'x'}, ip='198.51.100.7')
-        self.assertEqual(self.call('POST', '/api/login', {'username': 'admin', 'password': 'admin123'}, ip='198.51.100.7').status, 429)
+    def login(self, username, password, ip='10.0.0.1', device_cookie=None):
+        return self.call('POST', '/api/login', {'username': username, 'password': password}, ip=ip,
+                         headers={'Cookie': device_cookie} if device_cookie else None)
+
+    def test_wrong_passwords_never_lock_other_users(self):
+        """Someone mistyping (or guessing) one account, on the same computer, must not lock anyone else."""
+        self.call('POST', '/api/users', {'username': 'cashierA', 'password': 'goodpass99', 'role': 'CASHIER'},
+                  headers={'Cookie': self.cookies(self.login('admin', 'admin123'), 'fw_session'), 'Origin': 'http://localhost'})
+        for i in range(40):
+            self.login('cashierA', f'wrong{i}', ip='192.168.1.50')
+        self.assertEqual(self.login('cashierA', 'goodpass99', ip='192.168.1.50').status, 429, 'that account is paused on that computer')
+        self.assertEqual(self.login('admin', 'admin123', ip='192.168.1.50').status, 200, 'other users on the same computer can sign in')
+        self.assertEqual(self.login('cashierA', 'goodpass99', ip='192.168.1.60').status, 200, 'and on other computers too')
+
+    def test_trusted_browser_not_locked_by_guessing_in_another_window(self):
+        """The owner's normal browser keeps working while someone in an incognito window guesses the password."""
+        owner_browser = self.cookies(self.login('admin', 'admin123', ip='192.168.1.10'), 'fw_device')
+        self.assertTrue(owner_browser)
+        for i in range(15):
+            self.login('admin', f'guess{i}', ip='192.168.1.10')  # incognito window: no device cookie
+        self.assertEqual(self.login('admin', 'admin123', ip='192.168.1.10').status, 429, 'the incognito window is paused')
+        self.assertEqual(self.login('admin', 'admin123', ip='192.168.1.10', device_cookie=owner_browser).status, 200,
+                         'the browser the owner normally uses still signs in')
+
+    def test_a_trusted_browser_is_paused_by_its_own_mistakes(self):
+        device = self.cookies(self.login('admin', 'admin123'), 'fw_device')
+        for i in range(10):
+            self.login('admin', f'typo{i}', device_cookie=device)
+        self.assertEqual(self.login('admin', 'admin123', device_cookie=device).status, 429)
+
+    def test_device_cookie_of_another_user_does_not_help(self):
+        self.call('POST', '/api/users', {'username': 'cashierB', 'password': 'goodpass99', 'role': 'CASHIER'},
+                  headers={'Cookie': self.cookies(self.login('admin', 'admin123', ip='10.9.9.9'), 'fw_session'), 'Origin': 'http://localhost'})
+        attacker_device = self.cookies(self.login('cashierB', 'goodpass99', ip='203.0.113.5'), 'fw_device')
+        for i in range(10):
+            self.login('admin', f'guess{i}', ip='203.0.113.5', device_cookie=attacker_device)
+        self.assertEqual(self.login('admin', 'admin123', ip='203.0.113.5', device_cookie=attacker_device).status, 429)
 
     def test_unknown_usernames_take_as_long_as_wrong_passwords(self):
         def timed(username):
@@ -63,8 +95,7 @@ class InProcessTestCase(unittest.TestCase):
         self.assertGreater(unknown, known * 0.4, 'unknown usernames must also run the password hash')
 
     def test_restore_signs_everyone_out(self):
-        login = self.call('POST', '/api/login', {'username': 'admin', 'password': 'admin123'})
-        cookie = login.headers['Set-Cookie'].split(';')[0]
+        cookie = self.cookies(self.login('admin', 'admin123'), 'fw_session')
         self.assertEqual(self.call('GET', '/api/me', headers={'Cookie': cookie}).status, 200)
         name = self.app.backups.create('manual')
         res = self.call('POST', '/api/backups/restore', {'name': name}, headers={'Cookie': cookie, 'Origin': 'http://localhost'})
