@@ -311,6 +311,13 @@ def init_db():
     user_columns={r['name'] for r in conn.execute('PRAGMA table_info(users)').fetchall()}
     if 'session_version' not in user_columns:
         conn.execute('ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0')
+    invoice_columns={r['name'] for r in conn.execute('PRAGMA table_info(invoices)').fetchall()}
+    for column, definition in {
+        'revised_from_id':'INTEGER', 'revised_to_id':'INTEGER', 'revision_reason':'TEXT',
+        'edited_by':'INTEGER', 'edited_at':'TEXT', 'voided_by':'INTEGER', 'voided_at':'TEXT'
+    }.items():
+        if column not in invoice_columns:
+            conn.execute(f'ALTER TABLE invoices ADD COLUMN {column} {definition}')
     for column, definition in {
         'cost_price':'REAL NOT NULL DEFAULT 0', 'mrp':'REAL NOT NULL DEFAULT 0',
         'retail_selling_price':'REAL NOT NULL DEFAULT 0', 'wholesale_selling_price':'REAL NOT NULL DEFAULT 0',
@@ -581,7 +588,7 @@ def consume_held_bill(conn, held_bill_id):
     return result
 
 
-def create_invoice(conn, payload, user_id, held=False):
+def create_invoice(conn, payload, user_id, held=False, invoice_date=None, billed_by=None):
     customer_id=payload.get('customer_id'); mode='STANDARD'
     cust=conn.execute('SELECT * FROM customers WHERE id=?',(customer_id,)).fetchone() if customer_id else None
     manual_name=str(payload.get('customer_name') or '').strip()
@@ -646,7 +653,7 @@ def create_invoice(conn, payload, user_id, held=False):
     outstanding=money(credit_total)
     inv_num=next_seq(conn,'invoice')
     conn.execute('INSERT INTO invoices(invoice_number,invoice_date,customer_id,customer_name_snapshot,customer_type_snapshot,status,pricing_mode,subtotal,discount,taxable_amount,cgst,sgst,igst,cess,grand_total,amount_received,outstanding,user_id,notes,created_at,finalized_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-                 (inv_num,today(),customer_id,cust_name,cust_type,'FINALIZED',mode,subtotal,discount,taxable,cgst,sgst,igst,cess,grand,received,outstanding,user_id,payload.get('notes'),now_iso(),now_iso()))
+                 (inv_num,invoice_date or today(),customer_id,cust_name,cust_type,'FINALIZED',mode,subtotal,discount,taxable,cgst,sgst,igst,cess,grand,received,outstanding,billed_by or user_id,payload.get('notes'),now_iso(),now_iso()))
     iid=conn.execute('SELECT last_insert_rowid()').fetchone()[0]
     for p,qty,su,qb,final,original,ld,lt,tax,ca,cost,lcg,lsg,lig,gr,cr in rows:
         conn.execute('INSERT INTO invoice_items(invoice_id,product_id,sku_snapshot,product_name_snapshot,hsn_snapshot,qty_input,sell_unit,qty_base,unit_price,original_price,discount,taxable_amount,gst_rate,cess_rate,gst_amount,cost_snapshot,manual_override_reason) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
@@ -670,9 +677,35 @@ def void_invoice(conn, invoice_id, user_id):
     for item in items:
         conn.execute('INSERT INTO inventory_movements(product_id,movement_type,qty_base,unit_cost,ref_type,ref_id,reason,user_id,created_at) VALUES(?,?,?,?,?,?,?,?,?)',
                      (item['product_id'],'SALE_VOID',item['qty_base'],item['cost_snapshot'],'INVOICE',invoice_id,'Voided sale stock restoration',user_id,now_iso()))
-    conn.execute('UPDATE invoices SET status="VOID" WHERE id=?',(invoice_id,))
+    conn.execute('UPDATE invoices SET status="VOID",voided_by=?,voided_at=? WHERE id=?',(user_id,now_iso(),invoice_id))
     audit(conn,user_id,'Invoice voided','INVOICE',invoice_id,old=dict(inv),new={'status':'VOID','stock_restored':len(items)})
     return {'invoice_id':invoice_id,'restored_items':len(items)}
+
+
+def edit_invoice(conn, invoice_id, payload, user_id):
+    reason=str(payload.get('reason') or '').strip()
+    if len(reason)<3: raise ValueError('Enter a reason for editing this bill.')
+    old=conn.execute('SELECT * FROM invoices WHERE id=?',(invoice_id,)).fetchone()
+    if not old or old['status']!='FINALIZED': raise ValueError('Only a finalized bill can be edited.')
+    old_items=[dict(r) for r in conn.execute('SELECT product_id,product_name_snapshot,qty_input FROM invoice_items WHERE invoice_id=? ORDER BY id',(invoice_id,)).fetchall()]
+    void_invoice(conn,invoice_id,user_id)
+    new_id=create_invoice(conn,payload,user_id,invoice_date=old['invoice_date'],billed_by=old['user_id'])
+    edited_at=now_iso()
+    conn.execute('UPDATE invoices SET revised_from_id=?,revision_reason=?,edited_by=?,edited_at=? WHERE id=?',(invoice_id,reason,user_id,edited_at,new_id))
+    conn.execute('UPDATE invoices SET revised_to_id=? WHERE id=?',(new_id,invoice_id))
+    new=conn.execute('SELECT invoice_number,grand_total FROM invoices WHERE id=?',(new_id,)).fetchone()
+    new_items=[dict(r) for r in conn.execute('SELECT product_id,product_name_snapshot,qty_input FROM invoice_items WHERE invoice_id=? ORDER BY id',(new_id,)).fetchall()]
+    audit(conn,user_id,'Invoice edited','INVOICE',new_id,
+        old={'invoice_id':invoice_id,'invoice_number':old['invoice_number'],'total':old['grand_total'],'items':old_items},
+        new={'invoice_id':new_id,'invoice_number':new['invoice_number'],'total':new['grand_total'],'items':new_items,'reason':reason})
+    return {'invoice_id':new_id,'invoice_number':new['invoice_number'],'previous_invoice_number':old['invoice_number'],'edited_at':edited_at}
+
+
+INVOICE_SELECT='''SELECT i.*, ub.username billed_by_name, ue.username edited_by_name, uv.username voided_by_name,
+  rf.invoice_number revised_from_number, rt.invoice_number revised_to_number
+FROM invoices i
+LEFT JOIN users ub ON ub.id=i.user_id LEFT JOIN users ue ON ue.id=i.edited_by LEFT JOIN users uv ON uv.id=i.voided_by
+LEFT JOIN invoices rf ON rf.id=i.revised_from_id LEFT JOIN invoices rt ON rt.id=i.revised_to_id'''
 
 
 def build_backup(conn):
@@ -771,9 +804,9 @@ class Handler(BaseHTTPRequestHandler):
                 q=qs.get('q',[''])[0]; rows=conn.execute('SELECT * FROM customers WHERE name LIKE ? OR phone LIKE ? OR customer_code LIKE ? ORDER BY name LIMIT 100',(f'%{q}%',f'%{q}%',f'%{q}%')).fetchall(); self.send(*json_response(serialize_rows(rows))); return
             if path=='/api/invoices':
                 start=qs.get('start',[today()])[0]; end=qs.get('end',[today()])[0]; status=qs.get('status',['FINALIZED'])[0]
-                rows=conn.execute('SELECT * FROM invoices WHERE invoice_date BETWEEN ? AND ? AND status=? ORDER BY id DESC LIMIT 500',(start,end,status)).fetchall(); self.send(*json_response(serialize_rows(rows))); return
+                rows=conn.execute(INVOICE_SELECT+' WHERE i.invoice_date BETWEEN ? AND ? AND i.status=? ORDER BY i.id DESC LIMIT 500',(start,end,status)).fetchall(); self.send(*json_response(serialize_rows(rows))); return
             if path.startswith('/api/invoices/'):
-                iid=int(path.rsplit('/',1)[1]); inv=conn.execute('SELECT * FROM invoices WHERE id=?',(iid,)).fetchone()
+                iid=int(path.rsplit('/',1)[1]); inv=conn.execute(INVOICE_SELECT.replace('SELECT i.*,','SELECT i.*, c.phone customer_phone,').replace('FROM invoices i','FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id')+' WHERE i.id=?',(iid,)).fetchone()
                 if not inv: self.send(*json_response({'error':'Invoice not found'},404)); return
                 items=conn.execute('SELECT * FROM invoice_items WHERE invoice_id=? ORDER BY id',(iid,)).fetchall(); pays=conn.execute('SELECT * FROM payments WHERE invoice_id=? ORDER BY id',(iid,)).fetchall(); self.send(*json_response({'invoice':dict(inv),'items':serialize_rows(items),'payments':serialize_rows(pays)})); return
             if path=='/api/dashboard':
@@ -964,6 +997,8 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/api/sales':
                 b=parse_body(self); conn.execute('BEGIN')
                 iid=create_invoice(conn,b,u['id']); conn.commit(); self.send(*json_response({'ok':True,'invoice_id':iid,'invoice_number':conn.execute('SELECT invoice_number FROM invoices WHERE id=?',(iid,)).fetchone()['invoice_number']})); return
+            if re.fullmatch(r'/api/invoices/\d+/edit',path):
+                invoice_id=int(path.split('/')[-2]); b=parse_body(self); conn.execute('BEGIN IMMEDIATE'); result=edit_invoice(conn,invoice_id,b,u['id']); conn.commit(); self.send(*json_response({'ok':True,**result})); return
             if re.fullmatch(r'/api/invoices/\d+/void',path):
                 invoice_id=int(path.split('/')[-2]); conn.execute('BEGIN'); result=void_invoice(conn,invoice_id,u['id']); conn.commit(); self.send(*json_response({'ok':True,**result})); return
             if path=='/api/held-bills':
@@ -1094,17 +1129,18 @@ def read_and_remove(fp):
 
 def make_sales_xlsx(conn):
     wb=Workbook(); ws=wb.active; ws.title='Sales'
-    headers=['Invoice','Date','Customer','Customer Type','Pricing Mode','Subtotal','Discount','Total','Received']
+    headers=['Invoice','Date','Customer','Customer Type','Pricing Mode','Subtotal','Discount','Total','Received','Billed By','Edited By','Edited At','Revised From']
     ws.append(headers)
-    for r in conn.execute('SELECT invoice_number,invoice_date,customer_name_snapshot,customer_type_snapshot,pricing_mode,subtotal,discount,grand_total,amount_received FROM invoices WHERE status="FINALIZED" ORDER BY invoice_date,id'): ws.append([excel_safe(v) for v in r])
+    for r in conn.execute(INVOICE_SELECT+' WHERE i.status="FINALIZED" ORDER BY i.invoice_date,i.id'):
+        ws.append([excel_safe(v) for v in [r['invoice_number'],r['invoice_date'],r['customer_name_snapshot'],r['customer_type_snapshot'],r['pricing_mode'],r['subtotal'],r['discount'],r['grand_total'],r['amount_received'],r['billed_by_name'],r['edited_by_name'],r['edited_at'],r['revised_from_number']]])
     fp=os.path.join(EXPORT_DIR,f'sales-{dt.datetime.now().strftime("%Y%m%d-%H%M%S")}.xlsx'); wb.save(fp); return fp
 
 def make_detailed_sales_xlsx(conn):
     wb=Workbook(); sales=wb.active; sales.title='Sales'
-    sales.append(['Invoice','Date','Customer','Customer Type','Pricing Mode','Subtotal','Discount','Total','Received','Outstanding','Status','Notes'])
-    sales_rows=conn.execute('SELECT * FROM invoices WHERE status="FINALIZED" ORDER BY invoice_date,id').fetchall()
+    sales.append(['Invoice','Date','Customer','Customer Type','Pricing Mode','Subtotal','Discount','Total','Received','Outstanding','Status','Notes','Billed By','Edited By','Edited At','Revised From','Edit Reason'])
+    sales_rows=conn.execute(INVOICE_SELECT+' WHERE i.status="FINALIZED" ORDER BY i.invoice_date,i.id').fetchall()
     for inv in sales_rows:
-        sales.append([excel_safe(v) for v in [inv['invoice_number'],inv['invoice_date'],inv['customer_name_snapshot'],inv['customer_type_snapshot'],inv['pricing_mode'],inv['subtotal'],inv['discount'],inv['grand_total'],inv['amount_received'],inv['outstanding'],inv['status'],inv['notes']]])
+        sales.append([excel_safe(v) for v in [inv['invoice_number'],inv['invoice_date'],inv['customer_name_snapshot'],inv['customer_type_snapshot'],inv['pricing_mode'],inv['subtotal'],inv['discount'],inv['grand_total'],inv['amount_received'],inv['outstanding'],inv['status'],inv['notes'],inv['billed_by_name'],inv['edited_by_name'],inv['edited_at'],inv['revised_from_number'],inv['revision_reason']]])
     items=wb.create_sheet('Sale Items')
     items.append(['Invoice','Date','Customer','SKU','Product','Quantity','Unit','Base Quantity','Unit Price','Discount','Line Total','Cost Total','Gross Profit'])
     for row in conn.execute('SELECT i.invoice_number,i.invoice_date,i.customer_name_snapshot,ii.sku_snapshot,ii.product_name_snapshot,ii.qty_input,ii.sell_unit,ii.qty_base,ii.unit_price,ii.discount,ii.taxable_amount,ii.cost_snapshot FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id WHERE i.status="FINALIZED" ORDER BY i.invoice_date,i.id,ii.id'):
@@ -1134,8 +1170,12 @@ def make_sales_pdf(conn):
         if y<18*mm: c.showPage(); y=h-18*mm
     c.save(); return fp
 
+def short_time(value):
+    try: return dt.datetime.fromisoformat(str(value)).strftime('%d-%m-%Y %I:%M %p')
+    except (TypeError, ValueError): return str(value or '')
+
 def make_invoice_pdf(conn,iid):
-    inv=conn.execute('SELECT * FROM invoices WHERE id=?',(iid,)).fetchone()
+    inv=conn.execute(INVOICE_SELECT+' WHERE i.id=?',(iid,)).fetchone()
     items=conn.execute('SELECT * FROM invoice_items WHERE invoice_id=? ORDER BY id',(iid,)).fetchall()
     pays=conn.execute('SELECT * FROM payments WHERE invoice_id=? ORDER BY id',(iid,)).fetchall()
     st=settings(conn)
@@ -1175,7 +1215,18 @@ def make_invoice_pdf(conn,iid):
         c.drawString(x_offset,y,fit_text(f'Invoice: {inv["invoice_number"]}','Helvetica',7,col_width))
         y-=4*mm
         c.drawString(x_offset,y,fit_text(f'Date: {inv["invoice_date"]}','Helvetica',7,col_width)); y-=4*mm
-        c.drawString(x_offset,y,fit_text(f'Customer: {inv["customer_name_snapshot"]} ({inv["customer_type_snapshot"]})','Helvetica',7,col_width)); y-=5*mm
+        c.drawString(x_offset,y,fit_text(f'Customer: {inv["customer_name_snapshot"]} ({inv["customer_type_snapshot"]})','Helvetica',7,col_width)); y-=4*mm
+        c.drawString(x_offset,y,fit_text(f'Billed by: {inv["billed_by_name"] or "-"}','Helvetica',7,col_width)); y-=4*mm
+        if inv['revised_from_number']:
+            c.setFont('Helvetica-Oblique',7)
+            c.drawString(x_offset,y,fit_text(f'Revised from {inv["revised_from_number"]} - edited by {inv["edited_by_name"] or "-"} on {short_time(inv["edited_at"])}','Helvetica-Oblique',7,col_width)); y-=4*mm
+            c.setFont('Helvetica',7)
+        if inv['status']=='VOID':
+            c.setFont('Helvetica-Bold',7)
+            replaced=f' - replaced by {inv["revised_to_number"]}' if inv['revised_to_number'] else ''
+            c.drawString(x_offset,y,fit_text(f'CANCELLED{replaced} ({inv["voided_by_name"] or "-"}, {short_time(inv["voided_at"])})','Helvetica-Bold',7,col_width)); y-=4*mm
+            c.setFont('Helvetica',7)
+        y-=1*mm
         if continued:
             c.setFont('Helvetica-Oblique',7); c.drawString(x_offset,y,'Continued'); y-=4*mm
         c.setFont('Helvetica-Bold',7)
@@ -1188,7 +1239,7 @@ def make_invoice_pdf(conn,iid):
         return y
 
     # paginate items in shared slices so both columns show same content on each page
-    header_space = 63*mm
+    header_space = 71*mm
     usable_height = h - top_margin - header_space - bottom_margin - footer_space
     items_per_page = max(1, int(usable_height // line_h))
 

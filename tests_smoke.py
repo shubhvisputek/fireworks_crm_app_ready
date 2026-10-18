@@ -129,6 +129,48 @@ try:
     server.void_invoice(conn,fixed_price_id,user_id)
     conn.commit()
     assert server.current_stock(conn,product_id) == 10
+    # Bill editing: original is voided and linked, new bill keeps date and biller, stock follows the edit.
+    conn.execute('INSERT INTO users(username,password_hash,role,created_at) VALUES(?,?,?,?)',('cashier1',server.hash_password('cashierpass'),'STAFF',server.now_iso()))
+    cashier_id=conn.execute('SELECT last_insert_rowid()').fetchone()[0]
+    original_id=server.create_invoice(conn,{'items':[{'product_id':product_id,'qty':2}],'payments':[{'mode':'Cash','amount':40}]},cashier_id)
+    conn.commit()
+    assert server.current_stock(conn,product_id) == 8
+    try:
+        server.edit_invoice(conn,original_id,{'items':[{'product_id':product_id,'qty':3}],'payments':[{'mode':'Cash','amount':60}]},user_id)
+        raise AssertionError('Edit without a reason was accepted.')
+    except ValueError as exc:
+        assert 'reason' in str(exc)
+    edited=server.edit_invoice(conn,original_id,{'items':[{'product_id':product_id,'qty':3}],'payments':[{'mode':'UPI','amount':60}],'reason':'Customer added one box'},user_id)
+    conn.commit()
+    assert server.current_stock(conn,product_id) == 7
+    old_row=conn.execute('SELECT status,revised_to_id,voided_by FROM invoices WHERE id=?',(original_id,)).fetchone()
+    assert tuple(old_row) == ('VOID',edited['invoice_id'],user_id)
+    new_row=conn.execute(server.INVOICE_SELECT+' WHERE i.id=?',(edited['invoice_id'],)).fetchone()
+    assert new_row['status']=='FINALIZED' and new_row['grand_total']==60 and new_row['revised_from_id']==original_id
+    assert new_row['billed_by_name']=='cashier1' and new_row['edited_by_name']=='admin' and new_row['edited_at'] and new_row['revision_reason']=='Customer added one box'
+    edited_pdf=open(server.make_invoice_pdf(conn,edited['invoice_id']),'rb').read()
+    assert b'Billed by: cashier1' in edited_pdf and b'Revised from' in edited_pdf
+    void_pdf=open(server.make_invoice_pdf(conn,original_id),'rb').read()
+    assert b'CANCELLED - replaced by' in void_pdf
+    try:
+        server.edit_invoice(conn,original_id,{'items':[{'product_id':product_id,'qty':1}],'payments':[{'mode':'Cash','amount':20}],'reason':'second edit of old bill'},user_id)
+        raise AssertionError('A cancelled bill was edited.')
+    except ValueError as exc:
+        assert 'finalized' in str(exc)
+    try:
+        server.edit_invoice(conn,edited['invoice_id'],{'items':[{'product_id':product_id,'qty':50}],'payments':[{'mode':'Cash','amount':1000}],'reason':'too much stock'},user_id)
+        raise AssertionError('Edit beyond stock was accepted.')
+    except ValueError as exc:
+        assert 'Insufficient stock' in str(exc)
+    conn.rollback()
+    assert server.current_stock(conn,product_id) == 7
+    assert conn.execute('SELECT status FROM invoices WHERE id=?',(edited['invoice_id'],)).fetchone()['status'] == 'FINALIZED'
+    summary=load_workbook(server.make_sales_xlsx(conn),read_only=True).active
+    header=[c.value for c in next(summary.iter_rows(max_row=1))]
+    assert header[-4:] == ['Billed By','Edited By','Edited At','Revised From']
+    server.void_invoice(conn,edited['invoice_id'],user_id)
+    conn.commit()
+    assert server.current_stock(conn,product_id) == 10
     conn.close()
     print('SMOKE TEST PASSED')
 finally:

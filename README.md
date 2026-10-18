@@ -41,6 +41,8 @@ The database is created automatically at `data/fireworks.db` and demo data is se
 - Stock-in, stock adjustments, inventory ledger, and safe product removal
 - Customer master with automatic creation from manual billing details
 - Returns linked to original invoice
+- Edit finalized bills (Owner): add/remove items or change quantities; the original is kept as cancelled and linked to the re-issued bill, with editor, timestamp and reason recorded
+- "Billed by" on every invoice PDF, the Sales list and Excel exports, plus "Edited by" with date/time for revised bills
 - Expense entry and P&L calculations
 - Owner dashboard with refill attention and dedicated Sales Analytics page with top/bottom product views
 - Sales targets and progress
