@@ -46,7 +46,16 @@ Open `http://localhost:8000` and sign in as `admin` / `admin123`, then change th
 - **Products:** one-time CSV/Excel product master import with column mapping, preview and all-or-nothing validation. Add products, set the cost price used for profit reports, remove or archive products.
 - **Inventory:** purchases/GRN (updates the cost price), stock adjustments, stock removal, per-product stock ledger, low-stock alerts.
 - **Customers:** customer master. Customers are also created automatically from a name or mobile number typed on a bill.
-- **Expenses** and recurring expense templates; **dashboard** and **analytics** (sales, gross profit after cost of goods, net profit after expenses, top/bottom products, payment mix, presets including the configured season).
+- **Expenses** and recurring expense templates.
+- **Dashboard with analytics:** pick a period (today, yesterday, last 7/30 days, this/last month, season or any dates); every number is compared with the period before it. Tabs show each point of view, and only the tabs a person's permissions allow:
+  - **Overview:** headline numbers with change and trend, sales by day vs the previous period, target progress, payment mix, top products, what needs attention.
+  - **Sales:** discounts, credit given, deleted/edited/returned bills, sales by hour, a weekday × hour heatmap of busy times, bill sizes, payment modes.
+  - **Products:** revenue and margin by category, top 10 and most profitable products, rising and falling products, slowest sellers, how concentrated sales are.
+  - **Customers & credit:** retail vs wholesale, new vs repeat customers, top customers, credit outstanding by age.
+  - **Team:** sales, bills, average bill, discounts, deletions, edits and refunds per person.
+  - **Stock:** stock value by category, out of stock and low stock, products running out at the current pace, stock that is not selling, licence storage.
+  - **Finance:** sales → cost of goods → gross profit → expenses → net profit, sales and profit by day, expenses by category and by day, daily/weekly/monthly/season targets.
+  - Cashiers see the same views for **their own bills only**. Charts have hover tooltips and a "Show as table" view.
 - **Settings**, sales targets, invoice prefix and footer; audit log of every change.
 - **Roles and permissions:** Owner, Manager, Cashier, Stock keeper, Accountant (plus "Staff (legacy)" for accounts created earlier, which keep their old access). The Owner can tick or untick individual permissions per person. The server enforces every rule, not just the menu:
   - Cashiers see only **their own** bills, held bills and expenses.

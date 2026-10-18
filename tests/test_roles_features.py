@@ -79,6 +79,7 @@ class RoleMatrixTests(RoleTestCase):
             # path: roles allowed (owner always)
             ('GET', '/api/dashboard'): {'MANAGER', 'CASHIER', 'ACCOUNTANT'},
             ('GET', '/api/analytics'): {'MANAGER', 'ACCOUNTANT'},
+            ('GET', '/api/insights'): {'MANAGER', 'CASHIER', 'ACCOUNTANT'},
             ('GET', '/api/invoices'): {'MANAGER', 'CASHIER', 'ACCOUNTANT'},
             ('GET', '/api/customers'): {'MANAGER', 'CASHIER', 'ACCOUNTANT'},
             ('GET', '/api/dues'): {'MANAGER', 'ACCOUNTANT'},
@@ -346,6 +347,86 @@ class BackupTests(RoleTestCase):
         self.assertEqual(junk.status, 400)
         uploaded = self.owner.upload('/api/backups/restore', {}, name, file.body)
         self.assertEqual(uploaded.status, 200, uploaded.body)
+
+
+
+class InsightTests(RoleTestCase):
+    """The dashboard's analytics: sections by permission, own-bills scope, profit hiding, period handling."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        owner_client = cls.owner
+        res = owner_client.post('/api/products', {'sku': 'INS-1', 'name': 'Insight Rocket', 'category': 'Rockets', 'unit_price': 100,
+                                                  'opening_stock': 100, 'cost_price': 60})
+        cls.pid = res.json()['id']
+        for client, qty in ((cls.clients['CASHIER'], 2), (cls.clients['CASHIER'], 1), (cls.cashier2, 4), (cls.owner, 3)):
+            sale = client.post('/api/sales', {'items': [{'product_id': cls.pid, 'qty': qty}], 'payments': [{'mode': 'UPI', 'amount': 100 * qty}]})
+            assert sale.status == 200, sale.body
+
+    def test_owner_sees_every_section(self):
+        d = self.owner.get('/api/insights?preset=today').json()
+        self.assertEqual(d['scope'], 'all')
+        self.assertEqual(set(d) - {'period', 'scope'}, {'sales', 'products', 'customers', 'team', 'stock', 'finance'})
+        k = d['sales']['kpi']
+        self.assertEqual((k['sales'], k['bills'], k['items']), (1000, 4, 10))
+        self.assertEqual((k['cogs'], k['gross_profit'], k['gross_margin']), (600, 400, 40))
+        self.assertEqual(d['period']['days'], 1)
+        self.assertEqual(len(d['sales']['hourly']), 24)
+        self.assertEqual(sum(h['sales'] for h in d['sales']['hourly']), 1000)
+        self.assertEqual(sum(c['bills'] for c in d['sales']['heatmap']), 4)
+        self.assertEqual(d['sales']['payments'], [{'mode': 'UPI', 'amount': 1000, 'bills': 4}])
+        self.assertEqual(sum(b['bills'] for b in d['sales']['bill_sizes']), 4)
+        self.assertEqual(d['products']['top'][0]['category'], 'Rockets')
+        self.assertEqual(d['products']['categories'][0]['share'], 100)
+        staff = {row['name']: row for row in d['team']['staff']}
+        self.assertEqual(staff['Cashier One']['sales'], 300)
+        self.assertEqual(staff['cashier2']['bills'], 1)
+        self.assertEqual(d['finance']['pnl']['net_profit'], 400 - d['finance']['pnl']['expenses'])
+        self.assertEqual([t['key'] for t in d['finance']['targets']], ['daily', 'weekly', 'monthly', 'seasonal'])
+        self.assertIn('dues_aging', d['customers'])
+        self.assertIn('inventory_cost', d['stock']['totals'])
+
+    def test_trend_is_filled_and_compared(self):
+        d = self.owner.get('/api/insights?preset=7d').json()
+        trend = d['sales']['trend']
+        self.assertEqual(len(trend), 7)
+        self.assertEqual(trend[-1]['sales'], 1000)
+        self.assertEqual(sum(t['sales'] for t in trend[:-1]), 0)
+        self.assertEqual(trend[0]['prev_day'], d['period']['prev_start'])
+        self.assertEqual(d['sales']['previous']['sales'], 0)
+
+    def test_cashier_sees_only_own_bills(self):
+        d = self.cashier.get('/api/insights?preset=7d').json()
+        self.assertEqual(d['scope'], 'own')
+        self.assertEqual(set(d) - {'period', 'scope'}, {'sales', 'products'})
+        self.assertEqual((d['sales']['kpi']['sales'], d['sales']['kpi']['bills']), (300, 2))
+        self.assertEqual(d['products']['top'][0]['qty'], 3)
+        self.assertFalse(keys_deep(d) & PROFIT_KEYS)
+
+    def test_manager_gets_team_but_no_profit(self):
+        d = self.manager.get('/api/insights?preset=month').json()
+        self.assertIn('team', d)
+        self.assertEqual(d['sales']['kpi']['sales'], 1000)
+        self.assertFalse(keys_deep(d) & PROFIT_KEYS)
+        self.assertNotIn('cogs', d['finance']['pnl'])
+        accountant = self.clients['ACCOUNTANT'].get('/api/insights?preset=month').json()
+        self.assertEqual(accountant['finance']['pnl']['gross_profit'], 400)
+
+    def test_periods(self):
+        for preset in ('today', 'yesterday', '7d', '30d', 'month', 'last_month', 'season'):
+            with self.subTest(preset=preset):
+                d = self.owner.get(f'/api/insights?preset={preset}').json()
+                self.assertLessEqual(d['period']['start'], d['period']['end'])
+                self.assertLess(d['period']['prev_end'], d['period']['start'])
+                self.assertEqual(len(d['sales']['trend']), d['period']['days'])
+        custom = self.owner.get('/api/insights?start=2024-01-01&end=2024-01-31').json()
+        self.assertEqual((custom['period']['days'], custom['period']['prev_start'], custom['period']['prev_end']), (31, '2023-12-01', '2023-12-31'))
+        self.assertEqual(self.owner.get('/api/insights?preset=forever').status, 400)
+        self.assertEqual(self.owner.get('/api/insights?start=2024-02-01&end=2024-01-01').status, 400)
+        self.assertEqual(self.owner.get('/api/insights?start=2020-01-01&end=2024-01-01').status, 400)
+        self.assertEqual(self.owner.get('/api/insights?start=nope').status, 400)
+        self.assertEqual(self.clients['STOCK_KEEPER'].get('/api/insights').status, 403)
 
 
 if __name__ == '__main__':

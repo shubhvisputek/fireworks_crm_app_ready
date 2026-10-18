@@ -32,6 +32,9 @@ class InvoiceRepository(Repository):
     def create(self, values):
         return self.insert('invoices', values)
 
+    def set_finalized_at(self, invoice_id, at):
+        self.execute('UPDATE invoices SET created_at=?, finalized_at=? WHERE id=?', (at, at, invoice_id))
+
     def mark_void(self, invoice_id, user_id, at):
         self.execute("UPDATE invoices SET status='VOID', voided_by=?, voided_at=? WHERE id=?", (user_id, at, invoice_id))
 

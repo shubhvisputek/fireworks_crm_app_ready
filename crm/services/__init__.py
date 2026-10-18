@@ -11,6 +11,7 @@ from crm.services.demo import DemoService
 from crm.services.expenses import ExpenseService
 from crm.services.exports import ExportService
 from crm.services.held_bills import HeldBillService
+from crm.services.insights import InsightService
 from crm.services.inventory import InventoryService
 from crm.services.product_import import ProductImportService
 from crm.services.reports import ReportService
@@ -74,6 +75,10 @@ class Services:
     @cached_property
     def reports(self):
         return self._make(ReportService)
+
+    @cached_property
+    def insights(self):
+        return self._make(InsightService)
 
     @cached_property
     def exports(self):

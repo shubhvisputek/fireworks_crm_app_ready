@@ -20,7 +20,6 @@ import './pages/suppliers.js';
 import './pages/customers.js';
 import './pages/expenses.js';
 import './pages/pricing.js';
-import './pages/analytics.js';
 import './pages/settings.js';
 import './pages/users.js';
 import './pages/audit.js';

@@ -103,7 +103,7 @@ try {
     assert.equal(await page.innerText('.topbar h1'), 'Dashboard');
     const navItems = await page.locator('.nav button').allInnerTexts();
     assert.deepEqual(navItems, ['Dashboard', 'Billing', 'Sales', 'Cash Closing', 'Credit Dues', 'Products', 'Inventory', 'Suppliers', 'Customers',
-      'Expenses', 'Pricing', 'Analytics', 'Settings', 'Users', 'Audit Log', 'Backup & Export']);
+      'Expenses', 'Pricing', 'Settings', 'Users', 'Audit Log', 'Backup & Export']);
   });
 
   await step('add products', async () => {
@@ -273,14 +273,31 @@ try {
     assert.match(await page.innerText('tr:has-text("Rocket Pack")'), /275\.00/);
   });
 
-  await step('analytics presets and profit from cost price', async () => {
-    await nav(page, 'Analytics');
-    await page.waitForSelector('.kpi');
-    for (const label of ['Yesterday', 'Last 7 Days', 'This Month', 'Season', 'Today']) await page.click(`.pill-nav button:has-text("${label}")`);
-    await page.waitForSelector('.pill-nav button.active:has-text("Today")');
+  await step('dashboard periods, every tab and profit from cost price', async () => {
+    await nav(page, 'Dashboard');
+    await page.waitForSelector('.dashboard .tabs');
+    for (const label of ['Yesterday', 'Last 7 days', 'Last 30 days', 'This month', 'Last month', 'Season', 'Today']) {
+      await page.click(`.pill-nav button:has-text("${label}")`);
+      await page.waitForSelector(`.pill-nav button.active:has-text("${label}")`);
+    }
     const kpis = await page.innerText('.grid.kpis');
-    assert.match(kpis, /Gross Profit/);
-    assert.doesNotMatch(kpis, /Gross Profit\s*₹270\.00/, 'profit must subtract cost of goods');
+    assert.match(kpis, /Gross profit/);
+    assert.doesNotMatch(kpis, /Gross profit\s*₹270\.00/, 'profit must subtract cost of goods');
+    const tabs = await page.locator('.tabs button').allInnerTexts();
+    assert.deepEqual(tabs, ['Overview', 'Sales', 'Products', 'Customers & credit', 'Team', 'Stock', 'Finance']);
+    for (const [tab, title] of [['Sales', 'Busiest days and hours'], ['Products', 'Revenue by category'], ['Customers & credit', 'Credit outstanding by age'],
+      ['Team', 'Sales by person'], ['Stock', 'Stock value by category'], ['Finance', 'From sales to net profit'], ['Overview', 'Needs attention']]) {
+      await page.click(`.tabs button:has-text("${tab}")`);
+      await page.waitForSelector(`.chart-card h3:has-text("${title}")`);
+    }
+    // Hovering the hour chart shows a tooltip; the table view carries the same numbers.
+    await page.click('.tabs button:has-text("Sales")');
+    await page.hover('.chart-svg .mark[tabindex="0"]');
+    assert.match(await page.innerText('.chart-tip'), /₹/);
+    await page.fill('.dash-range input[name=start]', '2020-01-01');
+    await page.fill('.dash-range input[name=end]', '2020-01-31');
+    await page.click('.dash-range button');
+    await page.waitForSelector('.dash-period:has-text("1 Jan, 2020")');
   });
 
   await step('settings', async () => {
@@ -428,7 +445,10 @@ try {
     watch(staff, 'staff');
     await login(staff, server.url, 'rohan', 'rohanpass1');
     assert.deepEqual(await staff.locator('.nav button').allInnerTexts(), ['Dashboard', 'Billing', 'Sales', 'Cash Closing', 'Customers', 'Expenses']);
-    assert.doesNotMatch(await staff.innerText('#page'), /Gross Profit|At cost/);
+    await staff.waitForSelector('.dashboard .tabs');
+    assert.match(await staff.innerText('.dash-period'), /Showing only your own bills/);
+    assert.deepEqual(await staff.locator('.tabs button').allInnerTexts(), ['Overview', 'Sales', 'Products']);
+    assert.doesNotMatch(await staff.innerText('#page'), /gross profit|at cost|margin/i);
     await staff.goto(server.url + '/#users');
     await staff.waitForSelector('.topbar h1');
     assert.equal(await staff.innerText('.topbar h1'), 'Dashboard');

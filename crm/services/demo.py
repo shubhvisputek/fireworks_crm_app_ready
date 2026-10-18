@@ -7,6 +7,8 @@ CATEGORIES = [('Sparklers', 'Ground'), ('Aerial Shots', 'Aerial'), ('Rockets', '
               ('Ground Spinners', 'Ground'), ('Flower Pots', 'Ground'), ('Sound Crackers', 'Crackers')]
 CUSTOMERS = [('Aarav Traders', 'WHOLESALE', '9876500011'), ('Mahalaxmi Distributors', 'WHOLESALE', '9876500012'),
              ('Rohan Patil', 'RETAIL', '9876500013'), ('Sneha Kulkarni', 'RETAIL', '9876500014')]
+# Shop hours with an evening rush, so the hour charts look like a real day.
+HOURS = [10, 11, 12, 13, 15, 16, 17, 18, 18, 19, 19, 20, 20, 21]
 EXPENSES = [(0, 'Transport/Freight', 18000), (1, 'Salaries/Wages', 12000), (2, 'Packaging', 4500), (3, 'Marketing', 7500), (7, 'Rent', 25000)]
 
 
@@ -39,8 +41,11 @@ class DemoService(Service):
                 if (b + days_ago) % 4 == 0:
                     upfront = round(paid * 0.35, 2)
                     payments = [{'mode': 'Cash', 'amount': upfront}, {'mode': 'Credit', 'amount': round(paid - upfront, 2)}]
-                services.sales.create_sale(admin, {'customer_id': customer_ids[(b + days_ago) % len(customer_ids)], 'items': items,
-                                                   'payments': payments}, invoice_date=day)
+                invoice_id, _ = services.sales.create_sale(admin, {'customer_id': customer_ids[(b + days_ago) % len(customer_ids)],
+                                                                   'items': items, 'payments': payments}, invoice_date=day)
+                hour = HOURS[(b * 5 + days_ago) % len(HOURS)]
+                at = dt.datetime.combine(today - dt.timedelta(days=days_ago), dt.time(hour, (b * 7) % 60), self.clock.tz)
+                self.repos.invoices.set_finalized_at(invoice_id, min(at, self.clock.now()).isoformat(timespec='seconds'))
         for days_ago, category, amount in EXPENSES:
             services.expenses.create(admin, {'expense_date': (today - dt.timedelta(days=days_ago)).isoformat(), 'category': category,
                                              'amount': amount, 'payment_mode': 'UPI', 'vendor': 'Demo Vendor', 'notes': 'Sample/Test data'})

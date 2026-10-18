@@ -69,6 +69,7 @@ Effective permissions are the role preset unless the Owner customised that user 
 **Data rules enforced in services, not just routes:**
 - Without *See all bills*, invoice lists, details and PDFs are limited to bills the user made (`SalesService.visible_invoice`).
 - Held bills and expenses are limited to the user's own unless they have the wider permission.
+- The dashboard's analytics (`InsightService`, `GET /api/insights`) add each section only when the user may see it (customers/stock/finance need *Sales analytics*, team needs *See all bills*, credit ageing needs *Credit dues list*). Without *Sales analytics* the sales and product views count only the user's own bills.
 - `Service.visible()` strips cost and profit fields (`domain/visibility.py`) from dashboards, analytics, product details, purchases, the reorder plan and the JSON backup for users without *See cost, profit and margins*. The detailed Excel export drops its cost columns too.
 - Big discounts are checked in `SalesService._discount_approval`; approver passwords are throttled like logins.
 - The licence storage limit is checked in `InventoryService.check_storage` for purchases, positive adjustments, opening stock and imports. Confirmed overrides are audited.
@@ -92,13 +93,24 @@ core/actions.js   event delegation: markup uses data-action / data-change / data
 core/router.js    hash routes; pages declare their permission
 core/state.js     shared state (user, products, customers, settings), can(permission)
 core/format.js    money/number/date formatting (IST)
-ui/               layout (sidebar + top bar), modal/toast/forms, small widgets (kpi, table, chart)
+ui/               layout (sidebar + top bar), modal/toast/forms, small widgets (kpi, table)
+ui/charts.js      SVG/HTML charts (line, columns, bars, stacked bar, heatmap, waterfall, meter, stat tile) and the shared tooltip
 billing/cart.js   pure bill arithmetic, mirroring the server
 billing/bill.js   the bill being built (new, resumed, or an edit of a finalized bill)
 pages/*.js        one module per screen; each calls registerPage({name, label, permission, render})
 ```
 
 There is no inline JavaScript anywhere: no `onclick=` and no inline `<script>`. That allows the Content-Security-Policy to use `script-src 'self'`, so even a missed escape cannot run an injected script. Combined with the escaping `html` tag, this closes off the stored-XSS bugs the old UI had.
+
+### Charts
+
+`ui/charts.js` draws every chart as inline SVG or plain HTML, so there is no chart library and nothing breaks the CSP. The rules it follows:
+
+- Categorical colours come from one validated palette (`SERIES`) in a fixed order, and follow the entity: a payment mode or category keeps its colour whatever the filter. Magnitude (the heatmap) uses one blue ramp; ordered buckets (credit age) use its ordinal steps.
+- One y-axis per chart. Thin marks, 4px rounded bar ends, 2px gaps between touching fills. Labels use ink colours, never the series colour.
+- A legend for two or more series; values are labelled selectively (the peak or the latest point).
+- A hover/focus tooltip on every mark (a crosshair on line charts, arrow keys move it), and a "Show as table" view. Labels in the tooltip are set with `textContent`.
+- Charts are drawn at the card's pixel width (the dashboard measures it and redraws on resize), so text stays readable on phones.
 
 ## Adding a feature (example: "supplier list")
 
