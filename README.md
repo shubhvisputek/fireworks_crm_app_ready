@@ -21,6 +21,8 @@ Open `http://localhost:8000`.
 
 By default the server only listens on this computer (`127.0.0.1`). To reach it from other devices on your network, set `HOST=0.0.0.0` and also set `FIREWORKS_ADMIN_PASSWORD` (at least 12 characters) before the first run; the server refuses to start a network-exposed database with the demo password.
 
+On Windows, double-click `start_network.bat` to do this for you. On first run it asks for the admin password, then shows the address to open on phones and other computers on the same Wi-Fi (for example `http://192.168.1.25:8000`). Allow Python through Windows Firewall on private networks only, keep the window open while the shop is using the CRM, and use it only on your own password-protected Wi-Fi.
+
 For one shared online instance that both computers can use, see [DEPLOYMENT.md](DEPLOYMENT.md). The hosted setup requires a persistent disk and starts with an empty database.
 
 Demo login:

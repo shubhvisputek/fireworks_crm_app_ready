@@ -1253,8 +1253,15 @@ def make_invoice_pdf(conn,iid):
     c.save()
     return fp
 
+def default_password_in_use():
+    conn=db(); rows=conn.execute('SELECT password_hash FROM users WHERE active=1').fetchall(); conn.close()
+    return any(check_password('admin123',r['password_hash']) for r in rows)
+
+
 if __name__=='__main__':
     init_db()
+    if not is_loopback_host(HOST) and default_password_in_use():
+        raise SystemExit('An account still uses the demo password "admin123". Start the app normally (localhost), change the password in Settings, then start it on the network again.')
     print(f'Fireworks CRM running at http://{"localhost" if is_loopback_host(HOST) else HOST}:{PORT}')
     print('Login username: admin; password is configured through FIREWORKS_ADMIN_PASSWORD.' if os.getenv('FIREWORKS_ADMIN_PASSWORD') else 'Local demo login: admin / admin123 (change it in Settings)')
     ThreadingHTTPServer((HOST,PORT),Handler).serve_forever()
