@@ -436,8 +436,7 @@ try {
     await page.click('button:has-text("New Bill")');
   });
 
-  await step('credit dues with a WhatsApp reminder; receipt printing', async () => {
-    await context.route('https://wa.me/**', (route) => route.fulfill({ body: 'whatsapp' }));
+  await step('credit dues (WhatsApp switched off); receipt printing', async () => {
     await nav(page, 'Billing');
     await page.fill('#billName', 'Mahesh Credit');
     await page.click('#billPhone');
@@ -452,13 +451,9 @@ try {
     await nav(page, 'Credit Dues');
     const row = page.locator('tr:has-text("Mahesh Credit")').first();
     assert.match(await row.innerText(), /₹100\.00/);
-    const wa = context.waitForEvent('page');
-    await row.locator('button:has-text("WhatsApp reminder")').click();
-    const waPage = await wa;
-    await waPage.waitForLoadState();
-    assert.match(waPage.url(), /^https:\/\/wa\.me\/919811122233\?text=.*Mahesh%20Credit/);
-    await waPage.close();
+    assert.equal(await page.locator('button:has-text("WhatsApp")').count(), 0);
     await nav(page, 'Sales');
+    assert.equal(await page.locator('tbody button:has-text("WhatsApp")').count(), 0);
     const receipt = context.waitForEvent('request', (r) => /\/api\/invoice-receipt\/\d+$/.test(r.url()));
     const receiptPopup = context.waitForEvent('page');
     await moreAction(page, 'tbody tr:first-child', 'Receipt');

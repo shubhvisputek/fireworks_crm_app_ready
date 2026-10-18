@@ -1,6 +1,6 @@
 // Network-first cache for the app shell, so the UI still opens if the connection drops.
 // API calls are never cached.
-const CACHE = 'fireworks-crm-v13';
+const CACHE = 'fireworks-crm-v14';
 const SHELL = ['/', '/static/styles.css', '/static/overrides.css', '/static/themes.css', '/static/manifest.webmanifest', '/static/js/main.js'];
 
 self.addEventListener('install', (event) => {

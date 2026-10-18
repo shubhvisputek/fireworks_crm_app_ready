@@ -1,4 +1,4 @@
-// Who owes what: outstanding credit by customer, with collection and WhatsApp reminders.
+// Who owes what: outstanding credit by customer, with collection (and WhatsApp reminders when enabled).
 import { api } from '../core/api.js';
 import { $, html, setHtml } from '../core/html.js';
 import { formValues, registerActions } from '../core/actions.js';
@@ -7,7 +7,7 @@ import { can } from '../core/state.js';
 import { registerPage } from '../core/router.js';
 import { closeModal, formModal, toast } from '../ui/feedback.js';
 import { kpi, table } from '../ui/widgets.js';
-import { duesMessage, openWhatsapp } from '../ui/share.js';
+import { WHATSAPP_ENABLED, duesMessage, openWhatsapp } from '../ui/share.js';
 
 let customers = [];
 
@@ -19,7 +19,7 @@ async function render() {
       ${kpi('Unpaid bills', bills.length)}</div><br>
     <div class="card"><h3>By customer</h3>${table(['Customer', 'Phone', 'Owes', 'Oldest bill', ''], customers.map((c, index) => html`<tr>
       <td><strong>${c.name}</strong></td><td>${c.phone || ''}</td><td><strong>${money(c.total_due)}</strong></td><td>${c.oldest}</td>
-      <td>${c.phone ? html`<button class="button" data-action="dues.remind" data-index="${index}">WhatsApp reminder</button>` : html`<span class="small muted">No mobile number</span>`}</td></tr>`),
+      <td>${!WHATSAPP_ENABLED ? '' : c.phone ? html`<button class="button" data-action="dues.remind" data-index="${index}">WhatsApp reminder</button>` : html`<span class="small muted">No mobile number</span>`}</td></tr>`),
       'No outstanding credit. 🎉')}</div><br>
     <div class="card"><h3>Unpaid bills</h3>${table(['Bill', 'Date', 'Customer', 'Total', 'Paid', 'Due', ''], bills.map((b) => html`<tr>
       <td>${b.invoice_number}</td><td>${b.invoice_date}</td><td>${b.customer_name_snapshot}</td><td>${money(b.grand_total)}</td>

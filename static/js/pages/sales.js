@@ -8,7 +8,7 @@ import { go, registerPage } from '../core/router.js';
 import { closeModal, confirmDialog, field, openModal, toast } from '../ui/feedback.js';
 import { table } from '../ui/widgets.js';
 import { loadInvoiceForEdit } from '../billing/bill.js';
-import { billMessage, openWhatsapp } from '../ui/share.js';
+import { WHATSAPP_ENABLED, billMessage, openWhatsapp } from '../ui/share.js';
 
 let view = 'FINALIZED';
 
@@ -29,7 +29,7 @@ function history(x) {
 function actions(x) {
   const pdf = can('invoices.print') ? html`<button class="button" data-action="sales.pdf" data-id="${x.id}">PDF</button>` : '';
   const receipt = can('invoices.print') ? html`<button class="button" data-action="sales.receipt" data-id="${x.id}">Receipt (80 mm)</button>` : '';
-  const share = x.customer_phone ? html`<button class="button" data-action="sales.whatsapp" data-id="${x.id}" title="Send bill on WhatsApp">WhatsApp</button>` : '';
+  const share = WHATSAPP_ENABLED && x.customer_phone ? html`<button class="button" data-action="sales.whatsapp" data-id="${x.id}" title="Send bill on WhatsApp">WhatsApp</button>` : '';
   const finalized = x.status === 'FINALIZED';
   const more = [receipt, share,
     finalized && can('returns.create') ? html`<button class="button" data-action="sales.return" data-id="${x.id}">Return items</button>` : '',

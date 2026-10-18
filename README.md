@@ -65,11 +65,12 @@ Open `http://localhost:8000` and sign in as `admin` / `admin123`, then change th
   - Changing someone's role or permissions signs them out so the new access applies immediately.
 - **Discount approval:** discounts above the limit in Settings (default 10%) need a manager's username and password at the counter. The approver is recorded on the bill.
 - **Day-end cash closing:** each cashier sees the cash, UPI and card they took since their last closing (minus refunds and cash expenses), enters the counted cash, and the difference is recorded. Managers and accountants see everyone's closings.
-- **Credit dues:** who owes what, oldest bills first, with **Collect** and a **WhatsApp reminder** message.
+- **Credit dues:** who owes what, oldest bills first, with **Collect**. (WhatsApp reminders are switched off for now; see below.)
 - **Suppliers:** supplier list with balance owed, purchase ledger and supplier payments. Purchases (GRN) can include several products and create the supplier automatically.
 - **Seasonal reorder plan:** last season's sales plus expected growth, minus stock in hand, per product, with estimated cost.
 - **Barcodes:** set a barcode per product; scanning it in Billing adds the item.
-- **Thermal receipts and WhatsApp:** 80 mm receipt PDF (choose A4 or 80 mm in Settings for after-billing printing); send a bill summary to the customer on WhatsApp.
+- **Thermal receipts:** 80 mm receipt PDF (choose A4 or 80 mm in Settings for after-billing printing).
+- **WhatsApp (switched off):** the bill-summary and dues-reminder buttons are hidden. To turn them back on, set `WHATSAPP_ENABLED = true` in `static/js/ui/share.js`.
 - **Licence storage limit:** set explosive content per product (kg) and the licence limit in Settings. Stock-in that would exceed it asks for confirmation, and the dashboard warns when over.
 - **Wrong passwords:** after 10 wrong passwords, that username is paused for 15 minutes *on that browser or computer only*. Other users can still sign in, and the person's own usual browser (where they signed in before) keeps working even if someone else is guessing their password in another window.
 - **No tax:** prices are final; the app does not calculate or show GST or any other tax.

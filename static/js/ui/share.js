@@ -3,6 +3,9 @@ import { money } from '../core/format.js';
 import { state } from '../core/state.js';
 import { confirmDialog } from './feedback.js';
 
+// WhatsApp sharing is switched off for now; set this to true to bring back the bill and dues-reminder buttons.
+export const WHATSAPP_ENABLED = false;
+
 // wa.me needs the international number; 10-digit Indian mobiles get the 91 prefix.
 export function whatsappUrl(phone, message) {
   const digits = String(phone || '').replace(/\D/g, '');
