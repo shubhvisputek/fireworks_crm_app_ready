@@ -1,4 +1,4 @@
-// Users: roles, per-user permissions, password resets and activation.
+// Users: roles, per-user permissions, password resets, unlocking and activation.
 import { api } from '../core/api.js';
 import { $, $$, html, setHtml } from '../core/html.js';
 import { formValues, registerActions } from '../core/actions.js';
@@ -37,8 +37,10 @@ async function render() {
     <div class="card"><h3>Accounts</h3>${table(['User', 'Role', 'Status', 'Created', ''], users.map((user) => html`<tr>
       <td><strong>${user.name}</strong>${user.name !== user.username ? html`<div class="small muted">${user.username}</div>` : ''}</td>
       <td>${user.role_label}${user.custom_permissions ? html` <span class="tag warn">custom</span>` : ''}</td>
-      <td><span class="tag ${user.active ? 'good' : 'bad'}">${user.active ? 'Active' : 'Inactive'}</span></td><td>${String(user.created_at || '').slice(0, 10)}</td>
-      <td><div class="row"><button class="button" data-action="users.edit" data-id="${user.id}">Edit</button>
+      <td><span class="tag ${user.active ? 'good' : 'bad'}">${user.active ? 'Active' : 'Inactive'}</span>
+        ${user.locked ? html` <span class="tag bad" title="Too many wrong passwords">Locked</span>` : ''}</td><td>${String(user.created_at || '').slice(0, 10)}</td>
+      <td><div class="row">${user.locked ? html`<button class="button primary" data-action="users.unlock" data-id="${user.id}" data-name="${user.name}">Unlock</button>` : ''}
+        <button class="button" data-action="users.edit" data-id="${user.id}">Edit</button>
         ${user.id === state.user.id ? html`<span class="small muted">You</span>` : html`
         <button class="button" data-action="users.resetPassword" data-id="${user.id}" data-name="${user.name}">Reset password</button>
         <button class="button ${user.active ? 'danger' : 'primary'}" data-action="users.setStatus" data-id="${user.id}" data-active="${user.active ? 0 : 1}">${user.active ? 'Deactivate' : 'Activate'}</button>`}</div></td>
@@ -93,11 +95,16 @@ registerActions({
   },
   'users.resetPassword': (el) => formModal(`Reset password for ${el.dataset.name}`, [
     { name: 'password', label: 'New temporary password (8+ characters)', type: 'password', required: true },
-  ], 'users.savePassword', { hidden: { id: el.dataset.id }, submitLabel: 'Reset password', note: 'They will be signed out everywhere.' }),
+  ], 'users.savePassword', { hidden: { id: el.dataset.id }, submitLabel: 'Reset password', note: 'They will be signed out everywhere, and unlocked if wrong passwords had locked them out.' }),
   'users.savePassword': async (form) => {
     await api.post(`/api/users/${form.elements.id.value}/password`, { password: form.elements.password.value });
     closeModal();
     toast('Password reset');
+  },
+  'users.unlock': async (el) => {
+    await api.post(`/api/users/${el.dataset.id}/unlock`, {});
+    toast(`${el.dataset.name} can sign in again`);
+    await render();
   },
   'users.setStatus': async (el) => {
     const active = el.dataset.active === '1';

@@ -86,6 +86,51 @@ class InProcessTestCase(unittest.TestCase):
             self.login('admin', f'guess{i}', ip='203.0.113.5', device_cookie=attacker_device)
         self.assertEqual(self.login('admin', 'admin123', ip='203.0.113.5', device_cookie=attacker_device).status, 429)
 
+    def admin_headers(self):
+        return {'Cookie': self.cookies(self.login('admin', 'admin123', ip='10.200.0.1'), 'fw_session'), 'Origin': 'http://localhost'}
+
+    def test_admin_can_unlock_a_locked_user(self):
+        admin = self.admin_headers()
+        self.call('POST', '/api/users', {'username': 'cashierC', 'password': 'goodpass99', 'role': 'CASHIER'}, headers=admin)
+        for i in range(12):
+            self.login('cashierC', f'wrong{i}', ip='192.168.1.70')
+        self.assertEqual(self.login('cashierC', 'goodpass99', ip='192.168.1.70').status, 429)
+        users = json.loads(self.call('GET', '/api/users', headers=admin).body)
+        target = next(u for u in users if u['username'] == 'cashierC')
+        self.assertTrue(target['locked'], 'the Users page shows who is locked')
+        self.assertFalse(next(u for u in users if u['username'] == 'admin')['locked'])
+        self.assertEqual(self.call('POST', f"/api/users/{target['id']}/unlock", {}, headers=admin).status, 200)
+        self.assertEqual(self.login('cashierC', 'goodpass99', ip='192.168.1.70').status, 200, 'unlocked straight away')
+        users = json.loads(self.call('GET', '/api/users', headers=admin).body)
+        self.assertFalse(next(u for u in users if u['username'] == 'cashierC')['locked'])
+
+    def test_unlock_needs_manage_users(self):
+        admin = self.admin_headers()
+        self.call('POST', '/api/users', {'username': 'cashierD', 'password': 'goodpass99', 'role': 'CASHIER'}, headers=admin)
+        cashier = {'Cookie': self.cookies(self.login('cashierD', 'goodpass99'), 'fw_session'), 'Origin': 'http://localhost'}
+        self.assertEqual(self.call('POST', '/api/users/1/unlock', {}, headers=cashier).status, 403)
+
+    def test_password_reset_also_unlocks(self):
+        admin = self.admin_headers()
+        self.call('POST', '/api/users', {'username': 'cashierE', 'password': 'goodpass99', 'role': 'CASHIER'}, headers=admin)
+        for i in range(12):
+            self.login('cashierE', f'wrong{i}', ip='192.168.1.80')
+        uid = next(u['id'] for u in json.loads(self.call('GET', '/api/users', headers=admin).body) if u['username'] == 'cashierE')
+        self.call('POST', f'/api/users/{uid}/password', {'password': 'newgoodpass77'}, headers=admin)
+        self.assertEqual(self.login('cashierE', 'newgoodpass77', ip='192.168.1.80').status, 200)
+
+    def test_lockout_can_be_switched_off(self):
+        admin = self.admin_headers()
+        res = self.call('POST', '/api/settings', {'settings': {'login_lockout': False}}, headers=admin)
+        self.assertEqual(res.status, 200, res.body)
+        for i in range(30):
+            self.assertEqual(self.login('admin', f'wrong{i}', ip='192.168.1.90').status, 401, 'wrong passwords are still refused')
+        self.assertEqual(self.login('admin', 'admin123', ip='192.168.1.90').status, 200, 'but nobody is ever locked out')
+        self.call('POST', '/api/settings', {'settings': {'login_lockout': True}}, headers=admin)
+        for i in range(10):
+            self.login('admin', f'again{i}', ip='192.168.1.91')
+        self.assertEqual(self.login('admin', 'admin123', ip='192.168.1.91').status, 429, 'switching it back on restores the protection')
+
     def test_unknown_usernames_take_as_long_as_wrong_passwords(self):
         def timed(username):
             start = time.perf_counter()

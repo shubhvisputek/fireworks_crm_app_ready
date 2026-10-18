@@ -73,6 +73,8 @@ Open `http://localhost:8000` and sign in as `admin` / `admin123`, then change th
 - **WhatsApp (switched off):** the bill-summary and dues-reminder buttons are hidden. To turn them back on, set `WHATSAPP_ENABLED = true` in `static/js/ui/share.js`.
 - **Licence storage limit:** set explosive content per product (kg) and the licence limit in Settings. Stock-in that would exceed it asks for confirmation, and the dashboard warns when over.
 - **Wrong passwords:** after 10 wrong passwords, that username is paused for 15 minutes *on that browser or computer only*. Other users can still sign in, and the person's own usual browser (where they signed in before) keeps working even if someone else is guessing their password in another window.
+  - **Unlock:** in **Users**, a locked person shows a red **Locked** tag; press **Unlock** and they can sign in at once. Resetting someone's password also unlocks them.
+  - **Switch it off:** **Settings → Wrong-password lockout → Off** stops anyone ever being locked out (wrong passwords still never sign anyone in). Leaving it on is safer when the app is reachable from the internet.
 - **No tax:** prices are final; the app does not calculate or show GST or any other tax.
 - **Audit log:** every change, who made it and when, with before/after details. Filter by date, user and area.
 - **Backups:** an automatic database backup every day (keeps the last 30 by default), **Backup now**, download, and **restore** from the list or from a file (a safety copy is taken first). Also JSON export, summary and detailed Excel, PDF sales report.

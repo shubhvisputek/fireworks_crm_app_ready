@@ -32,7 +32,18 @@ class UserService(Service):
         }
 
     def list(self):
-        return [public_user(user) for user in self.repos.users.list_public()]
+        auth = self.services.auth
+        return [{**public_user(user), 'locked': auth.is_locked(user['username'])} for user in self.repos.users.list_public()]
+
+    def unlock(self, actor, user_id):
+        """Let someone who was locked out by wrong passwords sign in again straight away."""
+        target = self.repos.users.get(user_id)
+        if not target:
+            raise NotFoundError('User not found.')
+        self._guard_target(actor, target)
+        self.services.auth.unlock(target['username'])
+        with self.transaction():
+            self.audit(actor, 'User unlocked', 'USER', user_id, new={'username': target['username']})
 
     def _role(self, value):
         role = v.text(value, 20).upper()
@@ -118,6 +129,7 @@ class UserService(Service):
                 raise ValidationError('Use the Password button to change your own password.')
             self._guard_target(actor, target)
             self.repos.users.set_password(user_id, hash_password(password))
+            self.services.auth.unlock(target['username'])
             self.audit(actor, 'Password reset', 'USER', user_id, new={'username': target['username']})
 
     def set_active(self, actor, user_id, payload):

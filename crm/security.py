@@ -131,3 +131,14 @@ class LoginThrottle:
     def reset(self, key):
         with self._lock:
             self._failures.pop(key, None)
+
+    def keys(self, prefix, now=None):
+        """Keys starting with prefix that still have failures inside the window."""
+        now = now or time.time()
+        with self._lock:
+            return [key for key in list(self._failures) if key.startswith(prefix) and self._recent(key, now)]
+
+    def reset_prefix(self, prefix):
+        with self._lock:
+            for key in [key for key in self._failures if key.startswith(prefix)]:
+                del self._failures[key]

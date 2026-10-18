@@ -27,6 +27,11 @@ def reset_password(ctx):
     return {'ok': True}
 
 
+def unlock_user(ctx):
+    ctx.services.users.unlock(ctx.user, ctx.params['user_id'])
+    return {'ok': True}
+
+
 def register(router):
     router.add('GET', '/api/users', list_users, P.USERS_MANAGE)
     router.add('GET', '/api/users/catalog', catalog, P.USERS_MANAGE)
@@ -34,3 +39,4 @@ def register(router):
     router.add('POST', '/api/users/{user_id}', update_user, P.USERS_MANAGE)
     router.add('POST', '/api/users/{user_id}/status', set_status, P.USERS_MANAGE)
     router.add('POST', '/api/users/{user_id}/password', reset_password, P.USERS_MANAGE)
+    router.add('POST', '/api/users/{user_id}/unlock', unlock_user, P.USERS_MANAGE)

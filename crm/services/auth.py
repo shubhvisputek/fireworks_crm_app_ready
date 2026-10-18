@@ -12,6 +12,7 @@ MIN_PASSWORD_LENGTH = 8
 # - elsewhere, failures count per username + address, and per username across all untrusted places (slows
 #   guessing from many addresses) - which never locks the user's trusted browsers.
 # Other users are never affected by someone else's wrong passwords.
+# The owner can switch lockout off in Settings (login_lockout), and anyone who manages users can unlock one person.
 SOURCE_LIMIT, UNTRUSTED_USER_LIMIT = 10, 100
 MAX_TRUSTED_USERS = 20  # users remembered per browser (a shared counter computer)
 # The demo password and the most common passwords are refused when setting a password.
@@ -45,16 +46,41 @@ class AuthService(Service):
             keys = {f'login:{name}|device:{device["dev"]}': SOURCE_LIMIT}
         else:
             keys = {f'login:{name}|ip:{client_ip}': SOURCE_LIMIT, f'login:{name}|untrusted': UNTRUSTED_USER_LIMIT}
-        if any(self.throttle.is_blocked(key, limit=limit) for key, limit in keys.items()):
-            raise RateLimited(f'Too many wrong passwords for {name or "this user"}. Try again in 15 minutes, '
-                              'or sign in from a device you have used before.')
+        lockout = self.lockout_enabled()
+        if lockout and any(self.throttle.is_blocked(key, limit=limit) for key, limit in keys.items()):
+            raise RateLimited(f'Too many wrong passwords for {name or "this user"}. Ask the owner to unlock you in Users, '
+                              'try again in 15 minutes, or sign in from a device you have used before.')
         valid = verify_password(str(password or ''), user['password_hash'] if user else DUMMY_HASH)
         if not user or not valid:
-            for key in keys:
-                self.throttle.record_failure(key)
+            if lockout:
+                for key in keys:
+                    self.throttle.record_failure(key)
             raise AuthenticationError('Invalid username or password')
         self.throttle.reset(next(iter(keys)))
         return user
+
+    def lockout_enabled(self):
+        return bool(self.services.settings.get_settings().get('login_lockout', True))
+
+    @staticmethod
+    def _lock_prefixes(username):
+        name = str(username or '').strip().lower()
+        return f'login:{name}|', f'approval:{name}'
+
+    def is_locked(self, username):
+        """True if wrong passwords currently stop this user signing in somewhere (or approving)."""
+        if not self.lockout_enabled():
+            return False
+        login_prefix, approval_key = self._lock_prefixes(username)
+        limits = {key: UNTRUSTED_USER_LIMIT if key.endswith('|untrusted') else SOURCE_LIMIT for key in self.throttle.keys(login_prefix)}
+        return (any(self.throttle.is_blocked(key, limit=limit) for key, limit in limits.items())
+                or self.throttle.is_blocked(approval_key))
+
+    def unlock(self, username):
+        """Forget every wrong-password count for this user, on every device and address."""
+        login_prefix, approval_key = self._lock_prefixes(username)
+        self.throttle.reset_prefix(login_prefix)
+        self.throttle.reset(approval_key)
 
     def device_payload(self, user, device=None):
         """Trusted-device cookie contents: a random browser id and the users who signed in on it."""
@@ -65,12 +91,14 @@ class AuthService(Service):
     def verify_credentials(self, username, password, purpose='approval'):
         """Check another user's password (e.g. a manager approving a discount). Throttled like logins."""
         key = f'{purpose}:{str(username or "").strip().lower()}'
-        if self.throttle.is_blocked(key):
+        lockout = self.lockout_enabled()
+        if lockout and self.throttle.is_blocked(key):
             raise RateLimited('Too many failed attempts. Try again in 15 minutes.')
         user = self.repos.users.get_active_by_username(str(username or ''))
         valid = verify_password(str(password or ''), user['password_hash'] if user else DUMMY_HASH)
         if not user or not valid:
-            self.throttle.record_failure(key)
+            if lockout:
+                self.throttle.record_failure(key)
             raise ValidationError('Approver username or password is incorrect.')
         self.throttle.reset(key)
         return user

@@ -195,7 +195,7 @@ MIGRATIONS = [(1, _m1_product_prices), (2, _m2_session_versions), (3, _m3_invoic
 DEFAULT_SETTINGS = {
     'business_name': 'Shree Ganesh Fireworks', 'address': 'Pune, Maharashtra, India', 'license_number': '',
     'phone': '', 'email': '', 'logo': '', 'state': 'Maharashtra', 'state_code': '27', 'invoice_prefix': 'FW',
-    'negative_stock_allowed': False, 'batch_tracking': True,
+    'negative_stock_allowed': False, 'batch_tracking': True, 'login_lockout': True,
     'invoice_footer': 'Thank you for shopping with us.', 'walk_in_name': 'Walk-in Customer',
     'max_discount_pct': 10, 'storage_limit_kg': 0, 'receipt_format': 'A4', 'backup_keep_days': 30, 'theme': 'classic',
 }

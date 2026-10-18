@@ -559,6 +559,52 @@ try {
     await staffContext.close();
   });
 
+  await step('admin unlocks a user locked out by wrong passwords', async () => {
+    // Another browser (like an incognito window) types the wrong password for rohan until it is paused.
+    const other = await browser.newContext();
+    const guess = await other.newPage();
+    await guess.goto(server.url);
+    for (let i = 0; i < 10; i += 1) {
+      await guess.fill('input[name=username]', 'rohan');
+      await guess.fill('input[name=password]', `wrong-${i}`);
+      await guess.click('button:has-text("Sign in")');
+      await guess.waitForResponse((r) => r.url().endsWith('/api/login'));
+    }
+    await guess.fill('input[name=password]', 'rohanpass2');
+    await guess.click('button:has-text("Sign in")');
+    await guess.waitForSelector('text=Too many wrong passwords');
+    await nav(page, 'Users');
+    const row = page.locator('tr:has-text("Rohan")');
+    await row.locator('.tag:has-text("Locked")').waitFor();
+    await row.locator('button:has-text("Unlock")').click();
+    assert.match(await toastText(page), /can sign in again/);
+    assert.equal(await row.locator('.tag:has-text("Locked")').count(), 0);
+    await guess.click('button:has-text("Sign in")');
+    await guess.waitForSelector('.topbar h1');
+    await other.close();
+  });
+
+  await step('owner can switch the wrong-password lockout off', async () => {
+    await nav(page, 'Settings');
+    assert.equal(await page.inputValue('#page select[name=login_lockout]'), '1');
+    await page.selectOption('#page select[name=login_lockout]', '0');
+    await page.click('button:has-text("Save Settings")');
+    assert.match(await toastText(page), /Settings saved/);
+    const other = await browser.newContext();
+    const guess = await other.newPage();
+    await guess.goto(server.url);
+    for (let i = 0; i < 12; i += 1) {
+      const res = await guess.request.post(server.url + '/api/login', { data: { username: 'rohan', password: `nope-${i}` } });
+      assert.equal(res.status(), 401);
+    }
+    await login(guess, server.url, 'rohan', 'rohanpass2');
+    await other.close();
+    await nav(page, 'Settings');
+    await page.selectOption('#page select[name=login_lockout]', '1');
+    await page.click('button:has-text("Save Settings")');
+    assert.match(await toastText(page), /Settings saved/);
+  });
+
   await step('admin sees the staff bill with Billed by', async () => {
     await nav(page, 'Sales');
     await page.waitForSelector('th:has-text("Billed by")');
