@@ -1,6 +1,7 @@
 """Black-box API tests. They start the real server and exercise it over HTTP."""
 import http.cookiejar
 import itertools
+import os
 import unittest
 
 from tests.support import ServerProcess
@@ -269,6 +270,47 @@ class ImportTests(ApiTestCase):
         again = self.admin.upload('/api/import/products', {}, 'master.csv', self.CSV)
         self.assertEqual(again.status, 400)
         self.assertEqual(again.json()['duplicate_rows'], 2)
+
+    def import_file(self, filename, content):
+        preview = self.admin.upload('/api/import/products', {'mode': 'preview'}, filename, content)
+        self.assertEqual(preview.status, 200, preview.body)
+        self.assertEqual(preview.json()['errors'], [])
+        res = self.admin.upload('/api/import/products', {}, filename, content)
+        self.assertEqual(res.status, 200, res.body)
+        return preview.json(), res.json()
+
+    def test_repository_templates_import(self):
+        """The Product_Master_Template files shipped in the repository import cleanly, with every used column mapped."""
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        # The .xlsx goes in as it is; the CSV holds the same products, so its SKUs and barcode are renamed to stay unique.
+        for name, sku in (('Product_Master_Template.xlsx', 'SKU-001'), ('Product_Master_Template.csv', 'CSV-001')):
+            with self.subTest(name):
+                with open(os.path.join(root, name), 'rb') as handle:
+                    content = handle.read()
+                if name.endswith('.csv'):
+                    content = content.replace(b'SKU-', b'CSV-').replace(b'8901234500017', b'8901234500024')
+                preview, result = self.import_file(name, content)
+                self.assertEqual(result['imported'], 5)
+                mapping = preview['mapping']
+                self.assertEqual((mapping['sku'], mapping['unit_price'], mapping['cost_price']),
+                                 ('Product Code / SKU', 'Retail Selling Price', 'Cost Price'))
+                self.assertEqual((mapping['barcode'], mapping['explosive_kg']), ('Barcode', 'Net Explosive Content (kg)'))
+                self.assertNotIn('', preview['headers'])
+                self.assertFalse(any('gst' in h.lower() or 'hsn' in h.lower() or 'cess' in h.lower() for h in preview['headers']))
+                product = next(p for p in self.admin.get('/api/products').json() if p['sku'] == sku)
+                self.assertEqual((product['default_unit_price'], product['current_stock_base'], product['explosive_kg']), (99, 50, 0.05))
+                self.assertTrue(product['barcode'].startswith('89012345000'), 'barcode kept as text, not a number')
+                detail = self.admin.get(f"/api/products/{product['id']}").json()['product']
+                self.assertEqual(detail['cost_price'], 45)
+
+    def test_old_template_with_tax_columns_still_imports(self):
+        """Spreadsheets made from the earlier template (with GST/cess/HSN columns) import; those columns are ignored."""
+        old = ('Product Code / SKU,Product Name,Category,Unit,Cost Price,MRP,Retail Selling Price,GST Rate,Compensation Cess Rate,'
+               'HSN Code,Opening Stock,Product Status\nOLD-1,Old Sparkler,Sparklers,Box,45,135,99,18,0,3604,50,ACTIVE\n').encode()
+        _preview, result = self.import_file('old.csv', old)
+        self.assertEqual(result['imported'], 1)
+        product = next(p for p in self.admin.get('/api/products').json() if p['sku'] == 'OLD-1')
+        self.assertEqual((product['default_unit_price'], product['current_stock_base']), (99, 50))
 
     def test_missing_columns(self):
         res = self.admin.upload('/api/import/products', {}, 'bad.csv', b'Foo,Bar\n1,2\n')

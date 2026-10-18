@@ -78,7 +78,7 @@ Still works the old way: `pip install -r requirements.txt` then `python server.p
 - **Edit bills (administrator):** add or remove items and change quantities. The original bill is kept as cancelled and linked to the re-issued bill, with editor, time and reason recorded.
 - **Billed by / Edited by:** shown on every invoice PDF, the Sales list and Excel exports.
 - **Sales:** collect outstanding credit, return items (stock goes back), void bills, and view cancelled and edited bills.
-- **Products:** one-time CSV/Excel product master import with column mapping, preview and all-or-nothing validation. Add products, set the cost price used for profit reports, remove or archive products.
+- **Products:** one-time CSV/Excel product master import with column mapping, preview and all-or-nothing validation. Start from `Product_Master_Template.xlsx` or `.csv` (the Excel file has a "How to fill" sheet): Product Code / SKU, Product Name and Retail Selling Price are required; Category, Subcategory, Unit, Cost Price, Opening Stock, Minimum Stock, Brand, Barcode, Net Explosive Content (kg) and Product Status are imported; the carton, MRP, wholesale and batch columns are for your records only. Older files with GST/HSN columns still import (those columns are ignored). Add products, set the cost price used for profit reports, remove or archive products.
 - **Inventory:** purchases/GRN (updates the cost price), stock adjustments, stock removal, per-product stock ledger, low-stock alerts.
 - **Customers:** customer master. Customers are also created automatically from a name or mobile number typed on a bill.
 - **Expenses** and recurring expense templates.

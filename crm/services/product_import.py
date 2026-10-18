@@ -42,7 +42,7 @@ def _normalise(value):
 
 def suggest_mapping(headers):
     """Best header for each field, by exact match, containment, then word overlap."""
-    normalised = {_normalise(h): h for h in headers}
+    normalised = {_normalise(h): h for h in headers if _normalise(h)}  # a blank header would match every field
     mapping = {}
     for key, aliases in COLUMN_ALIASES.items():
         best, best_score = None, 0
@@ -97,7 +97,8 @@ def read_rows(filename, content):
         rows = [{headers[i]: (row[i] if i < len(row) else None) for i in range(len(headers))} for row in values[1:]]
     if len(rows) > MAX_ROWS:
         raise ValidationError(f'The file has more than {MAX_ROWS} rows.')
-    return rows
+    # Columns without a header (e.g. an empty column at the end of a sheet) carry nothing to import.
+    return [{key: value for key, value in row.items() if key and str(key).strip()} for row in rows]
 
 
 class ProductImportService(Service):
