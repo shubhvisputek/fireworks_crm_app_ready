@@ -16,7 +16,7 @@ class DemoService(Service):
     def seed(self):
         if self.repos.products.list(limit=1):
             return
-        admin = self.repos.users.get_active_by_username('admin')
+        admin = self.repos.users.first_active_owner()
         services = self.services
         product_ids = []
         index = 0

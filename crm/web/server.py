@@ -93,8 +93,10 @@ def main():
         raise SystemExit(str(error))
     if config.auto_backup:
         DailyBackupThread(app.backups, app.backup_keep_days).start()
-    shown = 'localhost' if not config.is_network_exposed else config.host
-    print(f'Fireworks CRM running at http://{shown}:{config.port}', flush=True)
-    print('Login username: admin; password is configured through FIREWORKS_ADMIN_PASSWORD.' if config.admin_password
-          else 'Local demo login: admin / admin123 (change it in Settings)', flush=True)
+    shared = ' (also shared on the network)' if config.is_network_exposed else ''
+    print(f'Fireworks CRM running at http://localhost:{config.port}{shared}', flush=True)
+    with app.db.session() as conn:
+        demo_password = app.services(conn).auth.default_password_in_use()
+    print('Local demo login: admin / admin123 (change it with the Password button)' if demo_password
+          else 'Sign in with your administrator account.', flush=True)
     BoundedThreadingHTTPServer((config.host, config.port), make_handler(app)).serve_forever()

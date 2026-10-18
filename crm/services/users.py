@@ -13,7 +13,7 @@ from crm.services.base import Service
 USERNAME_RE = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{2,31}')
 
 
-def _password(value, field='Password'):
+def check_password(value, field='Password'):
     if not isinstance(value, str) or len(value) < MIN_PASSWORD_LENGTH:
         raise ValidationError(f'{field} must be at least {MIN_PASSWORD_LENGTH} characters.')
     if value.lower() in WEAK_PASSWORDS:
@@ -80,7 +80,7 @@ class UserService(Service):
         username = v.text(data.get('username'), 64)
         if not USERNAME_RE.fullmatch(username):
             raise ValidationError('Username must be 3–32 characters and use only letters, numbers, dots, dashes, or underscores.')
-        password = _password(data.get('password'))
+        password = check_password(data.get('password'))
         role = self._role(data.get('role') or 'CASHIER')
         display_name = v.optional_text(data.get('display_name'), 60)
         permissions_json = self._permissions_json(role, data.get('permissions'))
@@ -120,7 +120,7 @@ class UserService(Service):
         return public_user(updated)
 
     def reset_password(self, actor, user_id, password):
-        password = _password(password, 'New password')
+        password = check_password(password, 'New password')
         with self.transaction():
             target = self.repos.users.get(user_id)
             if not target:

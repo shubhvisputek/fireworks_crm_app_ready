@@ -12,24 +12,57 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for how the code is organised and how to 
 
 ## Run
 
-```bash
-pip install -r requirements.txt
-python server.py
+**You need:** Python 3.10 or newer ([python.org](https://www.python.org/downloads/); on Windows tick "Add python.exe to PATH"). The launcher checks everything else and installs the three Python packages for you.
+
+| Computer | Double-click | Or in a terminal |
+|---|---|---|
+| Windows | `start.bat` | `start.bat start` |
+| macOS | `start.command` | `./start.sh start` |
+| Linux | `start.sh` | `./start.sh start` |
+
+With no options the launcher shows the requirements check, the status (data folder, accounts, backups, whether it is running) and a menu:
+
+```
+  1) Start on this computer only
+  2) Start and share on the shop Wi-Fi (phones, tablets, other PCs)
+  3) Set up / replace the administrator (force re-setup)
+  4) Check requirements and status
+  5) Install or repair requirements
+  6) Back up the data now
+  7) List backups
+  8) Restore a backup
+  9) Run the tests
+  h) Help: every command, for scripts and shortcuts
 ```
 
-Open `http://localhost:8000` and sign in as `admin` / `admin123`, then change the password with the **Password** button.
+- **First run:** it asks for the administrator username, password (typed twice, hidden) and shop name, then starts the app and opens the browser. Weak passwords such as `admin123` are refused.
+- **Forgot the admin password / locked out:** choose **3**, or run `setup --force` (same as `reset-admin`). Type the existing username to give it a new password (it is made an active owner and signed out everywhere), or a new username to add another owner. A leftover demo `admin`/`admin123` account is switched off.
+- **Share on Wi-Fi:** choose **2** or run `start --network`. It shows the addresses to open on phones (for example `http://192.168.1.25:8000`). Use only your own password-protected Wi-Fi; on Windows allow Python on **private** networks only.
+- **If port 8000 is busy** it picks the next free port and says which. If the app is already running it just opens it.
+- **Missing packages:** it offers to install them. If this Python does not allow installing packages (some Linux and Homebrew setups), it creates a private `.venv` folder and uses it automatically from then on.
 
-- The database is created automatically at `data/fireworks.db`. Set `FIREWORKS_SEED_DEMO=1` on the first run to load sample products, customers and bills for testing.
-- By default the server only listens on this computer (`127.0.0.1`). To use it from other devices on your Wi-Fi, set `HOST=0.0.0.0` and `FIREWORKS_ADMIN_PASSWORD` (12+ characters). The server refuses to go on the network while any account still uses the demo password.
-- On Windows, double-click `start_network.bat` to do this for you. On first run it asks for the admin password, then shows the address to open on phones and other computers (for example `http://192.168.1.25:8000`). Allow Python through Windows Firewall on **private** networks only, and use it only on your own password-protected Wi-Fi.
-- For one shared online instance, see [DEPLOYMENT.md](DEPLOYMENT.md).
+Every menu item is also a command that runs straight away without questions, for shortcuts and scripts (`python fireworks.py` works on every system too):
+
+```bash
+./start.sh help                                    # every command and option
+./start.sh start --network --port 8080 --no-browser
+./start.sh check                                   # exit code 0 = ready to run
+./start.sh backup ; ./start.sh backups ; ./start.sh restore fireworks-20261018-210000-manual.sqlite --yes
+# First run or admin reset with no questions (password from standard input or FIREWORKS_ADMIN_PASSWORD):
+echo "$ADMIN_PASSWORD" | ./start.sh start --admin-user owner --shop-name "Shree Fireworks" --password-stdin --install --yes
+echo "$ADMIN_PASSWORD" | ./start.sh reset-admin --admin-user owner --password-stdin
+```
+
+Options: `--data-dir` (another data folder), `--port`, `--network`, `--no-browser` / `--open`, `--demo` (sample data in an empty shop), `--no-backup`, `--reset-admin` (on `start`), `--install`, `--yes`. Exit codes: 0 done, 1 problem, 2 the administrator must be set up first.
+
+Still works the old way: `pip install -r requirements.txt` then `python server.py` (demo login `admin` / `admin123`); `start_windows.bat`, `start_network.bat` and `run.sh` now open the launcher. For one shared online instance, see [DEPLOYMENT.md](DEPLOYMENT.md).
 
 | Environment variable | Default | Purpose |
 |---|---|---|
 | `HOST`, `PORT` | `127.0.0.1`, `8000` | Where the server listens |
 | `FIREWORKS_DATA_DIR` | `./data` | Folder for the database and session key |
 | `FIREWORKS_DB`, `FIREWORKS_SECRET` | inside the data folder | Override individual file paths |
-| `FIREWORKS_ADMIN_PASSWORD` | – | Password for the first `admin` account (12+ characters) |
+| `FIREWORKS_ADMIN_PASSWORD` | – | Password for the first `admin` account (12+ characters); the launcher also reads it for `setup`/`start` |
 | `FIREWORKS_REQUIRE_ADMIN_PASSWORD` | off | `1` refuses to create a database without the password above |
 | `FIREWORKS_TIMEZONE` | `Asia/Kolkata` | Business day used for bill and report dates |
 | `FIREWORKS_SECURE_COOKIES` | off | `1` when served over HTTPS |
@@ -99,7 +132,7 @@ Every screen works from small phones (320px) through tablets to large desktops:
 ## Tests
 
 ```bash
-./run_tests.sh
+./run_tests.sh        # or, on any system: python fireworks.py test
 ```
 
 This runs the API, business-rule and database-upgrade tests (Python), the frontend unit tests (Node), and a full browser test of every screen (Playwright, skipped if not installed).

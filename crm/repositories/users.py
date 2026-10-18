@@ -13,6 +13,12 @@ class UserRepository(Repository):
     def get_active_by_username(self, username):
         return self.one('SELECT * FROM users WHERE username=? AND active=1', (username,))
 
+    def get_by_username(self, username):
+        return self.one('SELECT * FROM users WHERE username=?', (username,))
+
+    def first_active_owner(self):
+        return self.one("SELECT * FROM users WHERE role='OWNER' AND active=1 ORDER BY id LIMIT 1")
+
     def username_exists(self, username):
         return self.scalar('SELECT 1 FROM users WHERE username=?', (username,)) is not None
 

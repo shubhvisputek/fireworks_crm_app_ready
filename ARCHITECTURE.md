@@ -31,6 +31,8 @@ exports/        PDF and Excel rendering (pure functions: rows in, bytes out)
 | `exports/` | Build invoice PDFs, sales report PDF, Excel workbooks in memory | `pdf.invoice_pdf()`, `excel.sales_detailed()` |
 | `web/` | `Application.handle(request) → response`, router, controllers, static files | `routes/sales.py` |
 
+Outside `crm/`: `server.py` starts the server straight from environment variables (used by hosting such as Render). `fireworks.py` is the launcher people use: requirements check, first-run and forced administrator setup, start on this computer or the Wi-Fi, backups, and a menu. It only uses the standard library until the version check passes, then calls into `crm/`. `start.bat`, `start.sh` and `start.command` find a suitable Python and run it.
+
 ### Request flow
 
 1. `web/server.py` receives the socket request and wraps it in a `Request`.
