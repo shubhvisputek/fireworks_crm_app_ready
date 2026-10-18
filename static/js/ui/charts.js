@@ -8,12 +8,31 @@
 import { html, raw } from '../core/html.js';
 import { money, num } from '../core/format.js';
 
-export const SERIES = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6', '#e34948'];
-export const OTHER = '#b4b2a9';
-const PREVIOUS = '#898781';
-const RAMP = ['#cde2fb', '#9ec5f4', '#6da7ec', '#3987e5', '#256abf', '#184f95', '#0d366b'];
-const ORDINAL = ['#86b6ef', '#3987e5', '#1c5cab', '#0d366b'];
-const EMPTY_CELL = '#f0efec';
+// Light and dark palettes are separate validated steps of the same hues (not an automatic flip).
+const PALETTES = {
+  light: { series: ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6', '#e34948'], other: '#b4b2a9', previous: '#898781',
+    ramp: ['#cde2fb', '#9ec5f4', '#6da7ec', '#3987e5', '#256abf', '#184f95', '#0d366b'], ordinal: ['#86b6ef', '#3987e5', '#1c5cab', '#0d366b'],
+    empty: '#f0efec', ring: '#ffffff', critical: '#d03b3b' },
+  dark: { series: ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767'], other: '#6b6a64', previous: '#9a988f',
+    ramp: ['#104281', '#1c5cab', '#256abf', '#3987e5', '#6da7ec', '#9ec5f4', '#cde2fb'], ordinal: ['#184f95', '#2a78d6', '#6da7ec', '#b7d3f6'],
+    empty: '#2c2c2a', ring: '#1a1a1d', critical: '#e66767' },
+};
+// Exported bindings are live: setChartMode() swaps them, and the next render uses the new colours.
+export const SERIES = [...PALETTES.light.series];
+export let OTHER = PALETTES.light.other;
+let PREVIOUS = PALETTES.light.previous;
+let RAMP = PALETTES.light.ramp;
+let ORDINAL = PALETTES.light.ordinal;
+let EMPTY_CELL = PALETTES.light.empty;
+let RING = PALETTES.light.ring;
+let CRITICAL = PALETTES.light.critical;
+
+export function setChartMode(mode) {
+  const p = PALETTES[mode] || PALETTES.light;
+  SERIES.splice(0, SERIES.length, ...p.series);
+  ({ other: OTHER, previous: PREVIOUS, ramp: RAMP, ordinal: ORDINAL, empty: EMPTY_CELL, ring: RING, critical: CRITICAL } = p);
+}
+export const previousColor = () => PREVIOUS;
 
 // Indian short form (K, L, Cr). Browsers disagree on Intl's compact en-IN output, so it is done here.
 export function compact(value) {
@@ -208,7 +227,7 @@ export function lineChart({ labels, ticks = labels, series, format = money, axis
     const last = s.values.length - 1;
     return html`${s.area ? raw(`<path d="M${xs[0]},${y(0)}L${points.join('L')}L${xs[last]},${y(0)}Z" fill="${color}" opacity="0.1"/>`) : ''}
       ${raw(`<path d="M${points.join('L')}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"${s.dashed ? ' stroke-dasharray="5 4"' : ''}/>`)}
-      ${i === 0 ? raw(`<circle cx="${xs[last]}" cy="${y(s.values[last])}" r="4" fill="${color}" stroke="#fff" stroke-width="2"/>`) : ''}`;
+      ${i === 0 ? raw(`<circle cx="${xs[last]}" cy="${y(s.values[last])}" r="4" fill="${color}" stroke="${RING}" stroke-width="2"/>`) : ''}`;
   });
   const lastValue = series[0].values[series[0].values.length - 1];
   return html`${series.length > 1 ? legend(series.map((s, i) => ({ name: s.name, color: s.color || SERIES[i], line: true, dashed: s.dashed }))) : ''}
@@ -345,7 +364,7 @@ export function waterfall(steps, { format = money, axisFormat = compactMoney, he
     }
     const x = m.l + band * i + (band - barW) / 2;
     const negative = step.kind === 'total' && step.value < 0;
-    const color = step.kind === 'total' ? (negative ? '#d03b3b' : SERIES[0]) : OTHER;
+    const color = step.kind === 'total' ? (negative ? CRITICAL : SERIES[0]) : OTHER;
     const h = Math.max(1, y(bottom) - y(top));
     return html`<g class="mark" data-tip-title="${step.label}" data-tip-value="${step.kind === 'minus' ? '−' : ''}${format(step.value)}"
         data-tip-color="${color}" tabindex="0">

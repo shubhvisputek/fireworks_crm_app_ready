@@ -50,7 +50,7 @@ const itemRow = (index) => html`<div class="formgrid grn-row" style="margin-bott
 registerActions({
   'inventory.view': (el) => showProductDetail(Number(el.dataset.id), render),
   'inventory.purchase': async () => {
-    if (!state.products.length) return toast('Add products first.');
+    if (!state.products.length) return toast('Add products first.', 'error');
     const suppliers = await api.get('/api/suppliers');
     openModal('Add Stock / GRN', html`<form data-submit="inventory.savePurchase"><div class="formgrid">
         ${field({ name: 'supplier_id', label: 'Supplier', type: 'select', value: '', options: [['', '— New / no supplier —'], ...suppliers.map((s) => [s.id, s.name])] })}
@@ -81,7 +81,7 @@ registerActions({
     toast(`Stock added (${result.purchase_number}, ${money(result.total)})`);
   },
   'inventory.adjust': () => {
-    if (!state.products.length) return toast('Add products first.');
+    if (!state.products.length) return toast('Add products first.', 'error');
     formModal('Stock Adjustment', [
       { name: 'product_id', label: 'Product', type: 'select', options: productOptions(sorted()), required: true, full: true },
       { name: 'type', label: 'Type', type: 'select', value: 'DAMAGE', options: ADJUSTMENT_TYPES },
@@ -119,4 +119,4 @@ async function showReorderPlan(filters) {
       <td><strong>${num(row.suggested)} ${row.unit}</strong></td>${withCost ? html`<td>${money(row.cost)}</td>` : ''}</tr>`), 'No sales in that season to plan from.')}`);
 }
 
-registerPage({ name: 'inventory', label: 'Inventory', permission: ['inventory.manage', 'purchases.manage'], render });
+registerPage({ name: 'inventory', icon: 'inventory', group: 'Stock', label: 'Inventory', permission: ['inventory.manage', 'purchases.manage'], render });

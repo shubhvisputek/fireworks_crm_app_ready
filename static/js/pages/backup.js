@@ -4,7 +4,7 @@ import { $, html, setHtml } from '../core/html.js';
 import { registerActions } from '../core/actions.js';
 import { can } from '../core/state.js';
 import { registerPage } from '../core/router.js';
-import { openModal, toast } from '../ui/feedback.js';
+import { confirmDialog, openModal, toast } from '../ui/feedback.js';
 import { table } from '../ui/widgets.js';
 
 const size = (bytes) => (bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`);
@@ -48,7 +48,9 @@ registerActions({
     await render();
   },
   'backups.restore': async (el) => {
-    if (!confirm(`Restore the backup from ${el.dataset.created}? All changes made after it will be replaced (a safety copy is kept).`)) return;
+    const ok = await confirmDialog({ title: 'Restore this backup?', danger: true, confirmLabel: 'Restore backup',
+      message: `All data will go back to ${el.dataset.created}. Bills, stock and other changes made after that will be replaced. A safety copy of today's data is kept first.` });
+    if (!ok) return;
     await afterRestore(await api.post('/api/backups/restore', { name: el.dataset.name }));
   },
   'backups.upload': () => openModal('Restore from a backup file', html`<p class="small muted">Choose a <strong>.sqlite</strong> backup downloaded from this app.
@@ -57,11 +59,14 @@ registerActions({
       <button class="button danger">Restore this file</button></form>`),
   'backups.uploadRestore': async (form) => {
     const file = form.elements.file.files[0];
-    if (!file || !confirm(`Replace all current data with ${file.name}?`)) return;
+    if (!file) return toast('Choose a backup file first.', 'error');
+    const ok = await confirmDialog({ title: 'Restore from this file?', danger: true, confirmLabel: 'Replace all data',
+      message: `All current data will be replaced with ${file.name}. A safety copy of today's data is kept first.` });
+    if (!ok) return;
     const data = new FormData();
     data.append('file', file);
     await afterRestore(await api.upload('/api/backups/restore', data));
   },
 });
 
-registerPage({ name: 'backup', label: 'Backup & Export', permission: ['backup.download', 'reports.export', 'backup.restore'], render });
+registerPage({ name: 'backup', icon: 'backup', group: 'Admin', label: 'Backup & Export', permission: ['backup.download', 'reports.export', 'backup.restore'], render });

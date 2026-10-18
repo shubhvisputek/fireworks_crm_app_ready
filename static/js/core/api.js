@@ -13,7 +13,26 @@ export function setUnauthorizedHandler(handler) {
   onUnauthorized = handler;
 }
 
+// A thin bar at the top of the screen while any request takes longer than a moment.
+let active = 0;
+let barTimer;
+function loading(delta) {
+  active += delta;
+  clearTimeout(barTimer);
+  if (active > 0) barTimer = setTimeout(() => document.body.classList.add('is-loading'), 150);
+  else document.body.classList.remove('is-loading');
+}
+
 async function request(path, options = {}) {
+  loading(1);
+  try {
+    return await send(path, options);
+  } finally {
+    loading(-1);
+  }
+}
+
+async function send(path, options) {
   const response = await fetch(path, { credentials: 'same-origin', ...options });
   let data = {};
   try {

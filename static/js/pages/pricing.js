@@ -18,7 +18,7 @@ function render() {
 registerActions({
   'pricing.change': (el) => {
     const selected = state.products.find((p) => p.id === Number(el.dataset.id)) || sorted()[0];
-    if (!selected) return toast('Add products first.');
+    if (!selected) return toast('Add products first.', 'error');
     formModal('Change Default Unit Price', [
       { name: 'product_id', label: 'Product', type: 'select', value: selected.id, options: sorted().map((p) => [p.id, `${p.sku} • ${p.name} (${money(p.default_unit_price)})`]), full: true },
       { name: 'unit_price', label: 'Default Unit Selling Price', type: 'number', value: selected.default_unit_price, required: true },
@@ -34,4 +34,4 @@ registerActions({
   },
 });
 
-registerPage({ name: 'pricing', label: 'Pricing', title: 'Product Prices', permission: 'pricing.manage', render });
+registerPage({ name: 'pricing', icon: 'pricing', group: 'Stock', label: 'Pricing', title: 'Product Prices', permission: 'pricing.manage', render });

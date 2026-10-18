@@ -56,4 +56,4 @@ registerActions({
   },
 });
 
-registerPage({ name: 'suppliers', label: 'Suppliers', permission: 'suppliers.manage', render });
+registerPage({ name: 'suppliers', icon: 'suppliers', group: 'Stock', label: 'Suppliers', permission: 'suppliers.manage', render });

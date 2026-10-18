@@ -9,6 +9,7 @@ TEXT_SETTINGS = ('business_name', 'address', 'gstin', 'license_number', 'phone',
 BOOL_SETTINGS = ('negative_stock_allowed', 'batch_tracking')
 NUMBER_SETTINGS = ('default_gst_rate', 'default_cess_rate', 'storage_limit_kg')
 RECEIPT_FORMATS = ('A4', '80MM')
+THEMES = ('classic', 'clean', 'festive', 'counter', 'royal', 'soft')  # must match static/themes.css
 TARGET_FIELDS = ('daily', 'weekly', 'monthly', 'seasonal')
 
 
@@ -47,6 +48,11 @@ class SettingsService(Service):
             merged['max_discount_pct'] = pct
         if 'receipt_format' in incoming:
             merged['receipt_format'] = '80mm' if v.one_of(incoming['receipt_format'], RECEIPT_FORMATS, 'Receipt format') == '80MM' else 'A4'
+        if 'theme' in incoming:
+            theme = v.text(incoming['theme'], 20).lower()
+            if theme not in THEMES:
+                raise ValidationError(f'Theme must be one of: {", ".join(THEMES)}.')
+            merged['theme'] = theme
         if 'backup_keep_days' in incoming:
             days = int(v.amount(incoming['backup_keep_days'], 'Backups to keep', minimum=3, default=30))
             merged['backup_keep_days'] = min(days, 365)

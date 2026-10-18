@@ -16,13 +16,34 @@ export function setErrorReporter(reporter) {
   reportError = reporter;
 }
 
+// While an action is still working, its button is disabled and shows a spinner, so a slow
+// network can't cause a double click to save twice (for example, two copies of one bill).
+function busyButton(element, event) {
+  if (event.type === 'submit') return event.submitter || element.querySelector('button:not([type=button])');
+  return element.tagName === 'BUTTON' ? element : null;
+}
+
 async function run(name, element, event) {
   const handler = handlers.get(name);
   if (!handler) return;
+  let button = null;
   try {
-    await handler(element, event);
+    const result = handler(element, event);
+    if (result && typeof result.then === 'function') {
+      button = busyButton(element, event);
+      if (button) {
+        button.disabled = true;
+        button.setAttribute('aria-busy', 'true');
+      }
+      await result;
+    }
   } catch (error) {
     reportError(error);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+    }
   }
 }
 

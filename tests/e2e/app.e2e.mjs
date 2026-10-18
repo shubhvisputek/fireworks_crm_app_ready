@@ -66,6 +66,13 @@ async function login(page, url, username, password) {
   await page.waitForSelector('.topbar h1');
 }
 
+// Press the confirm button in the "are you sure?" dialog, after checking what it says.
+async function confirmDialog(page, pattern) {
+  await page.waitForSelector('#confirm.show [data-confirm="yes"]');
+  if (pattern) assert.match(await page.innerText('#confirm .modalbox'), pattern);
+  await page.click('#confirm [data-confirm="yes"]');
+}
+
 async function nav(page, label) {
   await clearToast(page);
   await page.click(`.nav button:has-text("${label}")`);
@@ -102,8 +109,8 @@ try {
     await login(page, server.url, 'admin', 'admin123');
     assert.equal(await page.innerText('.topbar h1'), 'Dashboard');
     const navItems = await page.locator('.nav button').allInnerTexts();
-    assert.deepEqual(navItems, ['Dashboard', 'Billing', 'Sales', 'Cash Closing', 'Credit Dues', 'Products', 'Inventory', 'Suppliers', 'Customers',
-      'Expenses', 'Pricing', 'Settings', 'Users', 'Audit Log', 'Backup & Export']);
+    assert.deepEqual(navItems, ['Dashboard', 'Billing', 'Sales', 'Cash Closing', 'Credit Dues', 'Products', 'Inventory', 'Suppliers', 'Pricing',
+      'Customers', 'Expenses', 'Settings', 'Users', 'Audit Log', 'Backup & Export']);
   });
 
   await step('add products', async () => {
@@ -199,7 +206,7 @@ try {
   await step('billing: pay with cash + credit and open the PDF', async () => {
     await page.click('button:has-text("Payment & Complete")');
     await page.fill('#modal .pay-amount', '300');
-    await page.click('#modal button:has-text("+ Payment")');
+    await page.click('#modal button:has-text("+ Split payment")');
     await page.locator('#modal .pay-mode').nth(1).selectOption('Credit');
     await page.locator('#modal .pay-amount').nth(1).fill('195');
     // Headless Chromium has no PDF viewer, so check that the popup requested the invoice PDF.
@@ -208,7 +215,12 @@ try {
     await page.click('#modal button:has-text("Finalize Invoice")');
     const pdfResponse = await (await pdfRequest).response();
     assert.equal(pdfResponse.headers()['content-type'], 'application/pdf');
-    (await popup).close();
+    // The print page frames the PDF and opens the print dialog; only our own pages may frame it.
+    assert.equal(pdfResponse.headers()['x-frame-options'], 'SAMEORIGIN');
+    const printPage = await popup;
+    await printPage.waitForURL(/\/static\/print\.html\?/);
+    assert.match(await printPage.innerText('#title'), /A4 invoice/);
+    await printPage.close();
     firstBill = (await toastText(page)).match(/Bill (\S+) completed/)[1];
   });
 
@@ -251,6 +263,7 @@ try {
     await page.click('#modal button:has-text("Process Return")');
     assert.match(await toastText(page), /Return RET-.* posted/);
     await page.click(`tr:has-text("${editedBill}") button:has-text("Delete")`);
+    await confirmDialog(page, /items go back into stock/);
     assert.match(await toastText(page), /posted return/);
   });
 
@@ -300,12 +313,60 @@ try {
     await page.waitForSelector('.dash-period:has-text("1 Jan, 2020")');
   });
 
-  await step('settings', async () => {
+  await step('settings and theme: preview, save, applies on next sign-in', async () => {
     await nav(page, 'Settings');
     await page.fill('input[name=business_name]', 'Diwali Depot');
+    await page.check('input[name=theme][value=festive]');
+    assert.equal(await page.getAttribute('html', 'data-theme'), 'festive', 'clicking a theme previews it');
     await page.click('button:has-text("Save Settings")');
     assert.match(await toastText(page), /Settings saved/);
+    await nav(page, 'Dashboard');
+    assert.equal(await page.getAttribute('html', 'data-theme'), 'festive');
+    await page.reload();
+    await page.waitForSelector('.topbar h1');
+    assert.equal(await page.getAttribute('html', 'data-theme'), 'festive');
   });
+
+  await step('dark mode switch is personal and remembered', async () => {
+    const before = await page.getAttribute('html', 'data-mode');
+    await page.click('.mode-toggle');
+    const after = await page.getAttribute('html', 'data-mode');
+    assert.notEqual(after, before);
+    await page.reload();
+    await page.waitForSelector('.topbar h1');
+    assert.equal(await page.getAttribute('html', 'data-mode'), after);
+    await page.click('.mode-toggle');
+    assert.equal(await page.getAttribute('html', 'data-mode'), before);
+  });
+
+  await step('billing counter: F2 search, arrow keys, F9 pay, change to give, no print', async () => {
+    await nav(page, 'Billing');
+    await page.waitForSelector('#productSearch');
+    await page.keyboard.press('F2');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'productSearch');
+    await page.keyboard.type('P-');
+    await page.keyboard.press('ArrowDown');
+    const picked = await page.innerText('.product-result.active strong');
+    await page.keyboard.press('Enter');
+    assert.match(await page.innerText('#cart'), new RegExp(picked));
+    await page.keyboard.press('F9');
+    await page.waitForSelector('#modal.show #cashGiven');
+    const due = Number(await page.inputValue('#modal .pay-amount'));
+    await page.fill('#cashGiven', String(Math.ceil(due) + 100));
+    assert.match(await page.innerText('#changeDue'), /Give back ₹/);
+    await page.check('#modal input[name=print][value=none]');
+    let popups = 0;
+    const count = () => popups++;
+    context.on('page', count);
+    await page.keyboard.press('F9');
+    assert.match(await toastText(page), /Bill .* completed/);
+    context.off('page', count);
+    assert.equal(popups, 0, "Don't print opens no print window");
+    // The choice is remembered on this device; later steps print again.
+    assert.equal(await page.evaluate(() => localStorage.getItem('fw-print')), 'none');
+    await page.evaluate(() => localStorage.setItem('fw-print', 'A4'));
+  });
+
 
   await step('backup page links', async () => {
     await nav(page, 'Backup & Export');

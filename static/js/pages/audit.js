@@ -35,4 +35,4 @@ registerActions({
   },
 });
 
-registerPage({ name: 'audit', label: 'Audit Log', permission: 'audit.view', render });
+registerPage({ name: 'audit', icon: 'audit', group: 'Admin', label: 'Audit Log', permission: 'audit.view', render });

@@ -54,4 +54,4 @@ registerActions({
   },
 });
 
-registerPage({ name: 'expenses', label: 'Expenses', permission: ['expenses.view', 'expenses.create'], render });
+registerPage({ name: 'expenses', icon: 'expenses', group: 'People & money', label: 'Expenses', permission: ['expenses.view', 'expenses.create'], render });

@@ -5,7 +5,7 @@ import { registerActions, formValues } from '../core/actions.js';
 import { dateTime, money, num, todayISO } from '../core/format.js';
 import { can, findProduct, loadReferenceData, state } from '../core/state.js';
 import { go, registerPage } from '../core/router.js';
-import { closeModal, field, openModal, toast } from '../ui/feedback.js';
+import { closeModal, confirmDialog, field, openModal, toast } from '../ui/feedback.js';
 import { table } from '../ui/widgets.js';
 import { loadInvoiceForEdit } from '../billing/bill.js';
 import { billMessage, openWhatsapp } from '../ui/share.js';
@@ -66,13 +66,15 @@ registerActions({
   'sales.edit': async (el) => {
     const detail = await api.get(`/api/invoices/${el.dataset.id}`);
     const missing = detail.items.filter((item) => !findProduct(item.product_id));
-    if (missing.length) return toast(`Cannot edit: these products are no longer active: ${missing.map((m) => m.product_name_snapshot).join(', ')}`);
+    if (missing.length) return toast(`Cannot edit: these products are no longer active: ${missing.map((m) => m.product_name_snapshot).join(', ')}`, 'error');
     loadInvoiceForEdit(detail, state.settings?.walk_in_name || 'Walk-in Customer');
     go('billing');
   },
   'sales.void': async (el) => {
     const number = el.dataset.number;
-    if (!confirm(`Delete ${number}? This voids the sale and restores its stock. The invoice and payment history are kept.`)) return;
+    const ok = await confirmDialog({ title: `Delete bill ${number}?`, danger: true, confirmLabel: 'Delete bill',
+      message: 'The sale is cancelled and its items go back into stock. The bill stays in the history marked as cancelled, with who deleted it and when.' });
+    if (!ok) return;
     await api.post(`/api/invoices/${el.dataset.id}/void`);
     await loadReferenceData();
     toast(`${number} voided and stock restored`);
@@ -115,4 +117,4 @@ registerActions({
   },
 });
 
-registerPage({ name: 'sales', label: 'Sales', permission: ['sales.view', 'sales.view_own'], render });
+registerPage({ name: 'sales', icon: 'sales', group: 'Sell', label: 'Sales', permission: ['sales.view', 'sales.view_own'], render });

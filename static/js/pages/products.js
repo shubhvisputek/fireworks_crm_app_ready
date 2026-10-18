@@ -5,7 +5,7 @@ import { formValues, registerActions } from '../core/actions.js';
 import { dateTime, money, num } from '../core/format.js';
 import { can, findProduct, loadReferenceData, state } from '../core/state.js';
 import { registerPage } from '../core/router.js';
-import { closeModal, formModal, openModal, toast } from '../ui/feedback.js';
+import { closeModal, confirmDialog, formModal, openModal, toast } from '../ui/feedback.js';
 import { withStorageConfirm } from '../ui/share.js';
 import { table } from '../ui/widgets.js';
 
@@ -32,7 +32,7 @@ function productRows() {
 }
 
 function renderTable() {
-  setHtml($('#productTable'), table(['Product ID', 'Product', 'Category', 'Unit', 'Default Unit Price', 'Stock', 'Status', ''], productRows(), 'No products found.'));
+  setHtml($('#productTable'), table(['Product ID', 'Product', 'Category', 'Unit', 'Default Unit Price', 'Stock', 'Status', ''], productRows(), 'No products found.', { search: false }));
 }
 
 function render() {
@@ -128,7 +128,9 @@ registerActions({
       html`<tr><td>${dateTime(m.created_at)}</td><td>${m.movement_type}</td><td>${num(m.qty_base)}</td><td>${m.reason || ''}</td></tr>`)));
   },
   'products.remove': async (el) => {
-    if (!confirm('Remove this product? Products used in bills or purchases are archived as inactive instead.')) return;
+    const ok = await confirmDialog({ title: 'Remove this product?', danger: true, confirmLabel: 'Remove product',
+      message: 'It disappears from billing and the product list. If it was ever used in a bill or purchase, it is archived as inactive instead, so old bills stay correct.' });
+    if (!ok) return;
     const result = await api.post(`/api/products/${el.dataset.id}/remove`);
     await refresh();
     toast(result.action === 'product removed' ? 'Product removed' : 'Product archived as inactive');
@@ -141,7 +143,7 @@ registerActions({
   },
   'products.preview': async (form) => {
     importFile = form.elements.file.files[0];
-    if (!importFile) return toast('Choose the Product Master file');
+    if (!importFile) return toast('Choose the Product Master file', 'error');
     const data = new FormData();
     data.append('file', importFile);
     data.append('mode', 'preview');
@@ -155,7 +157,7 @@ registerActions({
   },
   'products.confirmImport': async (form) => {
     const mapping = Object.fromEntries($$('.import-map', form).map((select) => [select.dataset.key, select.value || null]));
-    if (!mapping.sku || !mapping.name || !mapping.unit_price) return toast('Product ID, Product Name, and Unit Price are mandatory');
+    if (!mapping.sku || !mapping.name || !mapping.unit_price) return toast('Product ID, Product Name, and Unit Price are mandatory', 'error');
     const upload = (allow) => {
       const data = new FormData();
       data.append('file', importFile);
@@ -178,4 +180,4 @@ registerActions({
   },
 });
 
-registerPage({ name: 'products', label: 'Products', permission: 'catalog.manage', render });
+registerPage({ name: 'products', icon: 'products', group: 'Stock', label: 'Products', permission: 'catalog.manage', render });

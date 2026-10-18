@@ -46,4 +46,4 @@ registerActions({
   },
 });
 
-registerPage({ name: 'dues', label: 'Credit Dues', permission: 'dues.view', render });
+registerPage({ name: 'dues', icon: 'dues', group: 'Sell', label: 'Credit Dues', permission: 'dues.view', render });

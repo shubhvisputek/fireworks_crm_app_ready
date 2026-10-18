@@ -326,6 +326,14 @@ class SettingsTests(RoleTestCase):
         self.assertEqual((limits['receipt_format'], limits['max_discount_pct']), ('80mm', 10))
         self.owner.post('/api/settings', {'settings': {'receipt_format': 'A4'}})
 
+    def test_theme_setting(self):
+        self.assertEqual(self.cashier.get('/api/me').json()['limits']['theme'], 'classic')
+        self.assertEqual(self.owner.post('/api/settings', {'settings': {'theme': 'neon'}}).status, 400)
+        self.assertEqual(self.manager.post('/api/settings', {'settings': {'theme': 'royal'}}).status, 403)
+        self.assertEqual(self.owner.post('/api/settings', {'settings': {'theme': 'Royal'}}).status, 200)
+        self.assertEqual(self.cashier.get('/api/me').json()['limits']['theme'], 'royal')
+        self.owner.post('/api/settings', {'settings': {'theme': 'classic'}})
+
 
 class BackupTests(RoleTestCase):
     def test_backup_download_and_restore(self):

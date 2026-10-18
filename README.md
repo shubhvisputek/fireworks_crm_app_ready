@@ -72,6 +72,15 @@ Open `http://localhost:8000` and sign in as `admin` / `admin123`, then change th
 - **Audit log:** every change, who made it and when, with before/after details. Filter by date, user and area.
 - **Backups:** an automatic database backup every day (keeps the last 30 by default), **Backup now**, download, and **restore** from the list or from a file (a safety copy is taken first). Also JSON export, summary and detailed Excel, PDF sales report.
 
+## Look and feel
+
+- **Themes (owner):** Settings → Appearance offers six looks: Classic, Clean & calm, Festive brand, Counter pro (high contrast, big touch targets), Royal Diwali and Soft modern. Click one to preview it; it applies to everyone after **Save Settings**.
+- **Dark mode (each person):** the moon/sun button in the top bar. It follows the phone or computer setting until someone switches, and is remembered on that device. Charts switch to their own dark colours.
+- **Menu:** icons and sections (Overview, Sell, Stock, People & money, Admin).
+- **Billing counter:** keyboard shortcuts (<kbd>F2</kbd> product search, <kbd>↑</kbd>/<kbd>↓</kbd> + <kbd>Enter</kbd> to pick, <kbd>F4</kbd> customer, <kbd>F8</kbd> hold, <kbd>F9</kbd> pay and again to finalize, <kbd>Esc</kbd> close), a large "Total to pay", a **change calculator** (cash received → change to give back), and a print choice on the payment screen (**A4 invoice**, **80 mm receipt** or **Don't print**, remembered per device). Printing opens the bill in a print page that brings up the print dialog by itself.
+- **Lists:** long lists have a search box and show 50 rows at a time with **Show more**.
+- **Feedback:** buttons show a spinner and can't be pressed twice while saving; "are you sure?" dialogs say exactly what will happen; green/red messages for success and problems; friendly empty screens with the next step.
+
 ## Screen sizes
 
 Every screen works from small phones (320px) through tablets to large desktops:

@@ -46,4 +46,4 @@ registerActions({
   },
 });
 
-registerPage({ name: 'cash-closing', label: 'Cash Closing', permission: ['cash_closing.own', 'cash_closing.view_all'], render });
+registerPage({ name: 'cash-closing', icon: 'cash', group: 'Sell', label: 'Cash Closing', permission: ['cash_closing.own', 'cash_closing.view_all'], render });

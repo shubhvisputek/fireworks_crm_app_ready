@@ -106,6 +106,16 @@ There is no inline JavaScript anywhere: no `onclick=` and no inline `<script>`. 
 
 Breakpoints (in `static/overrides.css`, the last section is the responsive layer): phones ≤ 560px, card tables ≤ 640px, large phones ≤ 760px, drawer navigation ≤ 1024px (also `isMobile()` in `ui/layout.js`), desktop above. Tables need no per-page work for phones: `ui/responsive.js` copies each column header into a `data-label` on its cells, and CSS shows those labels when rows become cards. The e2e suite opens every page at 320, 390, 768, 1024 and 1440px and fails if anything is wider than the screen.
 
+### Themes and UI building blocks
+
+- `static/themes.css` (loaded last) holds the themes as **tokens**: one block of CSS variables per theme (`:root[data-theme="…"]`), a shared dark block (`:root[data-mode="dark"]`) with each theme's dark accent, and component rules that use only tokens. A new theme is a new block of values plus its name in `THEMES` (`crm/services/settings.py`) and `core/theme.js`.
+- `core/theme.js` sets `data-theme` (the shop's `theme` setting, sent to every user in `/api/me` → `limits.theme`) and `data-mode` (each person's choice in `localStorage`, defaulting to the device setting). It also swaps the chart palette (`setChartMode` in `ui/charts.js`) and redraws the dashboard.
+- `ui/icons.js`: line icons; pages pass `icon` and `group` to `registerPage`, and the sidebar draws section labels.
+- `ui/feedback.js`: `toast(message, 'success' | 'error' | 'info')` and `confirmDialog({title, message, confirmLabel, danger})`, which resolves `true`/`false` and has its own layer so it never closes an open form.
+- `core/actions.js`: an async action disables its button (with a spinner) until it finishes, so a double click can't save twice. `core/api.js` shows a thin loading bar for slow requests.
+- `ui/widgets.js` `table()` + `ui/lists.js`: lists over 10 rows get a search box; over 50 rows show 50 at a time with "Show more". Pass `{ search: false }` when the page has its own search.
+- Printing: `static/print.html` frames `/api/invoice-pdf/<id>` or `/api/invoice-receipt/<id>` and calls `print()`. Only those two responses send `X-Frame-Options: SAMEORIGIN` and `frame-ancestors 'self'`; everything else stays `DENY`.
+
 ### Charts
 
 `ui/charts.js` draws every chart as inline SVG or plain HTML, so there is no chart library and nothing breaks the CSP. The rules it follows:

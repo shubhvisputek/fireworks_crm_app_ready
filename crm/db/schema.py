@@ -192,7 +192,7 @@ DEFAULT_SETTINGS = {
     'phone': '', 'email': '', 'logo': '', 'state': 'Maharashtra', 'state_code': '27', 'invoice_prefix': 'FW',
     'negative_stock_allowed': False, 'batch_tracking': True, 'default_gst_rate': 0, 'default_cess_rate': 0,
     'invoice_footer': 'Thank you for shopping with us.', 'walk_in_name': 'Walk-in Customer',
-    'max_discount_pct': 10, 'storage_limit_kg': 0, 'receipt_format': 'A4', 'backup_keep_days': 30,
+    'max_discount_pct': 10, 'storage_limit_kg': 0, 'receipt_format': 'A4', 'backup_keep_days': 30, 'theme': 'classic',
 }
 
 

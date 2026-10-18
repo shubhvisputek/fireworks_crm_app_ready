@@ -115,4 +115,4 @@ document.addEventListener('change', (event) => {
   $$('input[name=perm]', form).forEach((box) => (box.checked = preset.has(box.value)));
 });
 
-registerPage({ name: 'users', label: 'Users', title: 'Users & Roles', permission: 'users.manage', render });
+registerPage({ name: 'users', icon: 'users', group: 'Admin', label: 'Users', title: 'Users & Roles', permission: 'users.manage', render });

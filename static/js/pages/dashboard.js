@@ -9,7 +9,7 @@ import { registerPage } from '../core/router.js';
 import { can } from '../core/state.js';
 import { errorBox, table } from '../ui/widgets.js';
 import {
-  OTHER, SERIES, barList, columnChart, heatmap, legend, lineChart, meter, ordinalColor, pct, resetCharts,
+  OTHER, SERIES, barList, previousColor, columnChart, heatmap, legend, lineChart, meter, ordinalColor, pct, resetCharts,
   stackedBar, statTile, waterfall, withTable,
 } from '../ui/charts.js';
 
@@ -68,7 +68,7 @@ function trendChart(d, { withProfit = false, width = size.full } = {}) {
     ), longDate(d.period.start));
   }
   const series = [{ name: withProfit ? 'Sales' : 'This period', values: s.trend.map((t) => t.sales), area: true },
-    { name: `Previous (${shortDate(d.period.prev_start)} – ${shortDate(d.period.prev_end)})`, values: s.trend.map((t) => t.prev_sales), color: '#898781', dashed: true }];
+    { name: `Previous (${shortDate(d.period.prev_start)} – ${shortDate(d.period.prev_end)})`, values: s.trend.map((t) => t.prev_sales), color: previousColor(), dashed: true }];
   if (withProfit && has(s.trend[0], 'profit')) series.splice(1, 1, { name: 'Gross profit', values: s.trend.map((t) => t.profit), color: SERIES[2] });
   return card(withProfit ? 'Sales and gross profit by day' : 'Sales by day', withTable(
     lineChart({ labels: s.trend.map((t) => longDate(t.day)), ticks: s.trend.map((t) => shortDate(t.day)), series, width }),
@@ -356,4 +356,4 @@ registerActions({
   },
 });
 
-registerPage({ name: 'dashboard', label: 'Dashboard', permission: ['dashboard.view', 'analytics.view'], render });
+registerPage({ name: 'dashboard', icon: 'dashboard', group: 'Overview', label: 'Dashboard', permission: ['dashboard.view', 'analytics.view'], render });

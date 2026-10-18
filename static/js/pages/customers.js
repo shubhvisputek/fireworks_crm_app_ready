@@ -30,4 +30,4 @@ registerActions({
   },
 });
 
-registerPage({ name: 'customers', label: 'Customers', permission: ['customers.view', 'customers.manage'], render });
+registerPage({ name: 'customers', icon: 'customers', group: 'People & money', label: 'Customers', permission: ['customers.view', 'customers.manage'], render });

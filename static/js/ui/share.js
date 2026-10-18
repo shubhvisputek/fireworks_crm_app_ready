@@ -1,6 +1,7 @@
 // WhatsApp share links and the "over storage limit — continue?" confirmation.
 import { money } from '../core/format.js';
 import { state } from '../core/state.js';
+import { confirmDialog } from './feedback.js';
 
 // wa.me needs the international number; 10-digit Indian mobiles get the 91 prefix.
 export function whatsappUrl(phone, message) {
@@ -34,7 +35,9 @@ export async function withStorageConfirm(send) {
     return await send(false);
   } catch (error) {
     if (error.code !== 'STORAGE_LIMIT') throw error;
-    if (!confirm(`${error.message}\n\nRecord it anyway? This will be noted in the audit log.`)) return null;
+    const ok = await confirmDialog({ title: 'Over the licence storage limit', message: `${error.message} Record it anyway? This will be noted in the audit log.`,
+      confirmLabel: 'Record anyway', danger: true });
+    if (!ok) return null;
     return send(true);
   }
 }

@@ -16,14 +16,19 @@ def invoice_detail(ctx):
     return ctx.services.sales.invoice_detail(ctx.user, ctx.params['invoice_id'])
 
 
+def printable(filename, content):
+    """An inline invoice PDF that our own print page (static/print.html) may show in a frame; other sites still cannot."""
+    response = Response.download(filename, content, 'application/pdf', inline=True)
+    response.headers.update({'X-Frame-Options': 'SAMEORIGIN', 'Content-Security-Policy': "frame-ancestors 'self'"})
+    return response
+
+
 def invoice_pdf(ctx):
-    filename, content = ctx.services.exports.invoice_pdf(ctx.user, ctx.params['invoice_id'])
-    return Response.download(filename, content, 'application/pdf', inline=True)
+    return printable(*ctx.services.exports.invoice_pdf(ctx.user, ctx.params['invoice_id']))
 
 
 def invoice_receipt(ctx):
-    filename, content = ctx.services.exports.invoice_pdf(ctx.user, ctx.params['invoice_id'], receipt=True)
-    return Response.download(filename, content, 'application/pdf', inline=True)
+    return printable(*ctx.services.exports.invoice_pdf(ctx.user, ctx.params['invoice_id'], receipt=True))
 
 
 def dues(ctx):
