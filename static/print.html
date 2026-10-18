@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Print bill</title>
+  <link rel="stylesheet" href="/static/print.css">
+  <script type="module" src="/static/js/print.js"></script>
+</head>
+<body>
+  <header class="bar">
+    <strong id="title">Preparing bill…</strong>
+    <span class="actions">
+      <button id="printAgain" type="button">Print</button>
+      <a id="openPdf" href="#" target="_self">Open PDF</a>
+      <button id="closeTab" type="button">Close</button>
+    </span>
+  </header>
+  <p id="hint" class="hint">The print dialog opens by itself. If it doesn't, press <b>Print</b> above (or Ctrl+P).</p>
+  <iframe id="doc" title="Bill"></iframe>
+</body>
+</html>

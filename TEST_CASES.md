@@ -1,5 +1,7 @@
 # Fireworks CRM Test Cases
 
+> Most of these checks are now automated: run `./run_tests.sh` (API, business rules, database upgrade, and a browser test of every screen). See the Tests section of ARCHITECTURE.md. This list remains for manual acceptance testing; GST-related rows refer to an earlier design and no longer apply.
+
 ## Test Setup
 
 - URL: `http://localhost:8000`

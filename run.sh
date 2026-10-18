@@ -1,3 +1,3 @@
-#!/usr/bin/env bash
-set -e
-python3 server.py
+#!/bin/sh
+# Kept for older instructions: same as "./start.sh start".
+exec "$(dirname "$0")/start.sh" start "$@"

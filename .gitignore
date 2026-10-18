@@ -10,5 +10,10 @@ __pycache__/
 .mcp.json
 bills/
 exports/
-data/fireworks.db
-data/.secret
+# Everything the app writes: the database (and its -wal/-shm files), session key and backups.
+data/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite3
+.env
