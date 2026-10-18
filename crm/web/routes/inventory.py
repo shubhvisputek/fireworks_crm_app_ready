@@ -11,7 +11,7 @@ def remove(ctx):
 
 def ledger(ctx):
     q = ctx.request.query
-    return ctx.services.inventory.ledger(q.get('product_id'), q.get('start'), q.get('end'))
+    return ctx.services.inventory.ledger(ctx.user, q.get('product_id'), q.get('start'), q.get('end'))
 
 
 def list_purchases(ctx):

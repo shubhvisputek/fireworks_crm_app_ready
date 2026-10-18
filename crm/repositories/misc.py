@@ -78,6 +78,15 @@ class AuditRepository(Repository):
         })
 
 
+class SessionRepository(Repository):
+    def revoke(self, sid, expires_at, now):
+        self.execute('INSERT OR IGNORE INTO revoked_sessions(sid, expires_at) VALUES(?, ?)', (sid, expires_at))
+        self.execute('DELETE FROM revoked_sessions WHERE expires_at < ?', (now,))
+
+    def is_revoked(self, sid):
+        return self.scalar('SELECT 1 FROM revoked_sessions WHERE sid=?', (sid,)) is not None
+
+
 class SequenceRepository(Repository):
     def next(self, key):
         self.execute('INSERT INTO sequence(key, value) VALUES(?, 1) ON CONFLICT(key) DO UPDATE SET value=value+1', (key,))

@@ -1,4 +1,5 @@
 """Black-box API tests. They start the real server and exercise it over HTTP."""
+import http.cookiejar
 import itertools
 import unittest
 
@@ -62,6 +63,36 @@ class AuthAndSecurityTests(ApiTestCase):
         self.assertEqual(client.post('/api/logout').status, 200)
         self.assertFalse(client.get('/api/me').json()['authenticated'])
 
+    def test_logout_revokes_the_session_on_the_server(self):
+        client = self.server.client()
+        client.login(*ADMIN)
+        copied = {c.name: c.value for c in client.jar}  # e.g. a cookie copied off a shared computer
+        thief = self.server.client()
+        for name, value in copied.items():
+            thief.jar.set_cookie(http.cookiejar.Cookie(0, name, value, None, False, '127.0.0.1', False, False, '/', True,
+                                                       False, None, False, None, None, {}))
+        self.assertTrue(thief.get('/api/me').json()['authenticated'])
+        self.assertEqual(client.post('/api/logout').status, 200)
+        self.assertFalse(thief.get('/api/me').json()['authenticated'])
+        self.assertEqual(thief.get('/api/products').status, 401)
+        other = self.server.client()
+        other.login(*ADMIN)
+        self.assertTrue(other.get('/api/me').json()['authenticated'], 'other sign-ins of the same user stay valid')
+
+    def test_unknown_host_names_rejected(self):
+        # A hostile site pointing its own domain at this server (DNS rebinding) must get nowhere.
+        res = self.admin.get('/api/me', headers={'Host': 'evil.example'})
+        self.assertEqual(res.status, 400)
+        self.assertEqual(self.server.client().get('/', headers={'Host': 'evil.example:80'}).status, 400)
+        for host in ('localhost', '192.168.1.25:8000', 'shop-pc', 'shop-pc.local:8000', '[::1]:8000'):
+            self.assertEqual(self.server.client().get('/', headers={'Host': host}).status, 200, host)
+
+    def test_post_without_origin_from_another_site_rejected(self):
+        res = self.admin.post('/api/customers', {'name': 'Evil'}, headers={'Referer': 'https://evil.example/page'})
+        self.assertEqual(res.status, 403)
+        res = self.admin.request('POST', '/api/customers', raw=b'name=Evil', headers={'Content-Type': 'application/x-www-form-urlencoded'})
+        self.assertEqual(res.status, 403)
+
     def test_login_throttled_after_repeated_failures(self):
         anon = self.server.client()
         codes = [anon.login('throttle-me', 'x').status for _ in range(11)]
@@ -102,10 +133,10 @@ class AuthAndSecurityTests(ApiTestCase):
 
 
 class PermissionTests(ApiTestCase):
-    STAFF_ALLOWED_GET = ['/api/dashboard', '/api/analytics', '/api/expenses', '/api/products', '/api/held-bills', '/api/backup',
+    STAFF_ALLOWED_GET = ['/api/dashboard', '/api/analytics', '/api/expenses', '/api/products', '/api/held-bills',
                          '/api/export/sales.xlsx', '/api/export/sales-detailed.xlsx', '/api/export/sales.pdf']
     STAFF_DENIED_GET = ['/api/settings', '/api/users', '/api/customers', '/api/purchases', '/api/categories',
-                        '/api/recurring-expenses', '/api/inventory/ledger?product_id=1']
+                        '/api/recurring-expenses', '/api/inventory/ledger?product_id=1', '/api/backup']
     STAFF_DENIED_POST = ['/api/users', '/api/products', '/api/customers', '/api/settings', '/api/pricing', '/api/inventory/adjust',
                          '/api/inventory/remove', '/api/purchases', '/api/returns', '/api/payments', '/api/invoices/1/void',
                          '/api/invoices/1/edit', '/api/held-bills/delete/1', '/api/products/1/remove']
@@ -490,7 +521,7 @@ class ReportTests(ApiTestCase):
                     self.assertIn(key, a)
 
     def test_backup_has_no_credentials(self):
-        data = self.staff.get('/api/backup')
+        data = self.admin.get('/api/backup')
         self.assertEqual(data.status, 200)
         self.assertIn('attachment', data.headers['Content-Disposition'])
         users = data.json()['users']

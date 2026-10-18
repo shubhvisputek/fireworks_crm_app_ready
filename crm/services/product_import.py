@@ -3,6 +3,7 @@ import csv
 import io
 import json
 import re
+import zipfile
 
 from openpyxl import load_workbook
 
@@ -61,18 +62,33 @@ def suggest_mapping(headers):
     return mapping
 
 
+MAX_COLS = 100
+MAX_XLSX_UNPACKED = 200 * 1024 * 1024  # a small .xlsx can unpack to gigabytes (zip bomb)
+
+
+def check_xlsx_size(content):
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            unpacked = sum(info.file_size for info in archive.infolist())
+    except zipfile.BadZipFile:
+        raise ValidationError('The file could not be read. Upload a CSV or .xlsx file.')
+    if unpacked > MAX_XLSX_UNPACKED:
+        raise ValidationError('The Excel file is too large once unpacked. Save it as CSV and try again.')
+
+
 def read_rows(filename, content):
     """Rows as dicts keyed by header, from CSV or the first Excel sheet."""
     if filename.lower().endswith('.csv'):
         text = content.decode('utf-8-sig', errors='replace')
         rows = list(csv.DictReader(io.StringIO(text)))
     else:
+        check_xlsx_size(content)
         try:
             workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
         except Exception:
             raise ValidationError('The file could not be read. Upload a CSV or .xlsx file.')
         try:
-            values = list(workbook.active.iter_rows(values_only=True, max_row=MAX_ROWS + 1))
+            values = list(workbook.active.iter_rows(values_only=True, max_row=MAX_ROWS + 1, max_col=MAX_COLS))
         finally:
             workbook.close()
         if not values:
@@ -93,6 +109,8 @@ class ProductImportService(Service):
         try:
             mapping = json.loads(mapping_json) if mapping_json else suggest_mapping(headers)
         except json.JSONDecodeError:
+            raise ValidationError('Column mapping is not valid.')
+        if not isinstance(mapping, dict):
             raise ValidationError('Column mapping is not valid.')
         missing = [field for field in REQUIRED if not mapping.get(field)]
         if missing:

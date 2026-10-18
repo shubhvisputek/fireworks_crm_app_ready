@@ -1,5 +1,6 @@
 """Cash closing, audit log and backups."""
-from crm.domain.permissions import Permission as P
+from crm.domain.permissions import OWNER, Permission as P
+from crm.errors import PermissionDenied
 from crm.web.http import Response
 
 
@@ -36,6 +37,9 @@ def download_backup(ctx):
 
 
 def restore_backup(ctx):
+    # A backup file can contain any accounts, including an owner, so only the owner may restore one.
+    if ctx.user['role'] != OWNER:
+        raise PermissionDenied('Only the owner can restore a backup.')
     content_type = ctx.request.headers.get('Content-Type', '')
     if 'multipart/form-data' in content_type:
         _fields, files = ctx.request.multipart()
@@ -45,7 +49,9 @@ def restore_backup(ctx):
         source = ctx.body().get('name', '')
         safety = ctx.app.backups.restore_named(source)
     ctx.services.audit_log.audit(ctx.user, 'Backup restored', 'BACKUP', None, new={'restored': source, 'safety_backup': safety})
-    # The restored database has its own users, so everyone signs in again.
+    # The restored database has its own users: bring its schema up to date and sign everyone out
+    # (a new signing key makes every existing session cookie invalid).
+    ctx.app.after_restore()
     ctx.end_session()
     return {'ok': True, 'restored': source, 'safety_backup': safety, 'relogin': True}
 

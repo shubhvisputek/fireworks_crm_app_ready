@@ -4,7 +4,10 @@ export class ApiError extends Error {
   constructor(message, status, details) {
     super(message);
     this.status = status;
-    Object.assign(this, details);
+    // Copy the server's extra fields (code, validation_errors, ...) but never ones that would replace built-ins.
+    for (const [key, value] of Object.entries(details || {})) {
+      if (!['__proto__', 'constructor', 'prototype', 'status', 'message', 'stack'].includes(key)) this[key] = value;
+    }
   }
 }
 

@@ -1,4 +1,5 @@
 """The application: turns a Request into a Response. Independent of the socket server."""
+import ipaddress
 import logging
 import mimetypes
 import os
@@ -81,6 +82,11 @@ class Application:
             if self.config.seed_demo:
                 services.demo.seed()
 
+    def after_restore(self):
+        with self.db.session() as conn:
+            migrate(conn, self.clock.now_iso(), self.clock.today())
+        self.signer.secrets.rotate()
+
     def backup_keep_days(self):
         with self.db.session() as conn:
             return self.services(conn).settings.get_settings().get('backup_keep_days', 30)
@@ -101,6 +107,8 @@ class Application:
     # --- dispatch ---------------------------------------------------------
     def handle(self, request: Request) -> Response:
         try:
+            if not self.host_allowed(request.headers.get('Host', '')):
+                return Response.error('Unknown host name. Add it to FIREWORKS_ALLOWED_HOSTS.', 400)
             if not request.path.startswith('/api/'):
                 return self.serve_static(request)
             return self.handle_api(request)
@@ -132,11 +140,50 @@ class Application:
         response.headers.update(ctx.response_headers)
         return response
 
+    def client_ip(self, request):
+        """The caller's address. Behind a trusted proxy, the last X-Forwarded-For entry is the one the proxy added."""
+        if self.config.trust_proxy:
+            forwarded = [part.strip() for part in request.headers.get('X-Forwarded-For', '').split(',') if part.strip()]
+            if forwarded:
+                return forwarded[-1]
+        return request.peer_ip
+
+    def host_allowed(self, host):
+        """Guards against DNS rebinding: a hostile web page pointing its own domain at this server.
+
+        Accepted: IP addresses (local and Wi-Fi use), localhost, single-word LAN names and .local names,
+        plus any names listed in FIREWORKS_ALLOWED_HOSTS (e.g. a domain behind HTTPS).
+        """
+        name = host.strip().lower()
+        if name.startswith('['):
+            name = name[1:name.find(']')] if ']' in name else ''
+        elif name.count(':') == 1:
+            name = name.split(':', 1)[0]
+        name = name.rstrip('.')
+        if not name:
+            return False
+        if name in self.config.allowed_hosts or name == 'localhost' or name.endswith('.localhost'):
+            return True
+        try:
+            ipaddress.ip_address(name)
+            return True
+        except ValueError:
+            pass
+        return '.' not in name or name.endswith('.local')
+
     @staticmethod
     def same_origin(request):
-        """Browsers send Origin on POST; reject requests coming from another site."""
+        """Reject POSTs from other sites. Browsers send Origin on cross-site POSTs; when it is missing,
+        a Referer from another site is still refused, and bodies must be JSON or an upload."""
+        host = request.headers.get('Host', '')
         origin = request.headers.get('Origin')
-        return not origin or urllib.parse.urlparse(origin).netloc == request.headers.get('Host', '')
+        if origin:
+            return urllib.parse.urlparse(origin).netloc == host
+        referer = request.headers.get('Referer')
+        if referer and urllib.parse.urlparse(referer).netloc != host:
+            return False
+        content_type = request.headers.get('Content-Type', '').split(';')[0].strip().lower()
+        return content_type in ('application/json', 'multipart/form-data', '')
 
     def serve_static(self, request):
         if request.method not in ('GET', 'HEAD'):

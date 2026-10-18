@@ -166,7 +166,7 @@ class SalesService(Service):
     def void(self, actor, invoice_id):
         """Cancel a bill and put its stock back. Payments stay on record."""
         with self.transaction():
-            invoice = self.repos.invoices.get(invoice_id)
+            invoice = self.visible_invoice(actor, invoice_id)  # only bills this user may see
             if not invoice or invoice['status'] != 'FINALIZED':
                 raise ValidationError('Finalized invoice not found or already voided.')
             if self.repos.invoices.posted_return_count(invoice_id):
@@ -185,7 +185,7 @@ class SalesService(Service):
         if len(reason) < 3:
             raise ValidationError('Enter a reason for editing this bill.')
         with self.transaction():
-            old = self.repos.invoices.get(invoice_id)
+            old = self.visible_invoice(actor, invoice_id)  # only bills this user may see
             if not old or old['status'] != 'FINALIZED':
                 raise ValidationError('Only a finalized bill can be edited.')
             old_items = self.repos.invoices.items(invoice_id)
@@ -204,7 +204,7 @@ class SalesService(Service):
     def record_return(self, actor, data):
         invoice_id = v.integer_id(data.get('invoice_id'), 'Invoice')
         with self.transaction():
-            invoice = self.repos.invoices.get(invoice_id)
+            invoice = self.visible_invoice(actor, invoice_id)  # only bills this user may see
             if not invoice or invoice['status'] != 'FINALIZED':
                 raise ValidationError('Finalized invoice not found.')
             lines, refund = [], 0.0
@@ -238,7 +238,7 @@ class SalesService(Service):
         invoice_id = v.integer_id(data.get('invoice_id'), 'Invoice')
         amount = v.number(data.get('amount'), 0)
         with self.transaction():
-            invoice = self.repos.invoices.get(invoice_id)
+            invoice = self.visible_invoice(actor, invoice_id)  # only bills this user may see
             if not invoice or invoice['status'] != 'FINALIZED':
                 raise ValidationError('Finalized invoice not found.')
             if amount <= 0 or amount > invoice['outstanding'] + 0.01:

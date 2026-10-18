@@ -57,9 +57,10 @@ class InsightService(Service):
         if preset and preset not in PRESETS:
             raise ValidationError('Unknown period.')
         start, end = self.resolve_period(preset, start, end)
-        days = _days(start, end)
-        if len(days) > MAX_DAYS:
+        # Checked before building the list of days, so a huge range can't tie up the server.
+        if (dt.date.fromisoformat(end) - dt.date.fromisoformat(start)).days + 1 > MAX_DAYS:
             raise ValidationError(f'Choose a period of at most {MAX_DAYS} days.')
+        days = _days(start, end)
         prev_end = (dt.date.fromisoformat(start) - dt.timedelta(days=1)).isoformat()
         prev_start = (dt.date.fromisoformat(prev_end) - dt.timedelta(days=len(days) - 1)).isoformat()
         full = self.can(actor, P.ANALYTICS_VIEW)

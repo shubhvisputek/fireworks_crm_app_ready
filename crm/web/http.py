@@ -1,5 +1,6 @@
 """Framework-independent request and response objects."""
 import json
+import re
 import urllib.parse
 from email.parser import BytesParser
 from email.policy import default as default_policy
@@ -8,8 +9,9 @@ from crm.errors import ValidationError
 
 
 class Request:
-    def __init__(self, method, target, headers, body_reader, max_body_bytes):
+    def __init__(self, method, target, headers, body_reader, max_body_bytes, client_ip=''):
         parsed = urllib.parse.urlparse(target)
+        self.peer_ip = client_ip  # the connecting socket's address (a proxy, when behind one)
         self.method = method
         self.path = parsed.path
         self.query = {key: values[0] for key, values in urllib.parse.parse_qs(parsed.query).items()}
@@ -87,5 +89,6 @@ class Response:
     @classmethod
     def download(cls, filename, content, content_type, inline=False):
         disposition = 'inline' if inline else 'attachment'
-        safe_name = filename.replace('"', '')
+        # Only safe characters in the header (no quotes, line breaks or other control characters).
+        safe_name = re.sub(r'[^A-Za-z0-9._ -]', '_', filename) or 'download'
         return cls(200, content, content_type, {'Content-Disposition': f'{disposition}; filename="{safe_name}"'})

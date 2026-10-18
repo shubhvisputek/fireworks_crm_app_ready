@@ -22,5 +22,12 @@ services:
         value: "1"
       - key: FIREWORKS_SECURE_COOKIES
         value: "1"
+      # Render's proxy adds the visitor's address to X-Forwarded-For; used for login throttling.
+      - key: FIREWORKS_TRUST_PROXY
+        value: "1"
+      # The onrender.com name is allowed automatically (RENDER_EXTERNAL_HOSTNAME). For a custom domain,
+      # list it here, comma-separated, e.g. billing.myshop.in
+      - key: FIREWORKS_ALLOWED_HOSTS
+        value: ""
       - key: FIREWORKS_ADMIN_PASSWORD
         sync: false

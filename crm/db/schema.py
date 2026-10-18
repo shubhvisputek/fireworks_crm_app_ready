@@ -184,8 +184,13 @@ def _m5_roles_and_operations(conn):
     conn.execute('CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode)')
 
 
+def _m6_revoked_sessions(conn):
+    """Signed-out sessions, so a copied cookie stops working after logout (rows are pruned after expiry)."""
+    conn.execute('CREATE TABLE IF NOT EXISTS revoked_sessions (sid TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)')
+
+
 MIGRATIONS = [(1, _m1_product_prices), (2, _m2_session_versions), (3, _m3_invoice_revisions), (4, _m4_indexes),
-              (5, _m5_roles_and_operations)]
+              (5, _m5_roles_and_operations), (6, _m6_revoked_sessions)]
 
 DEFAULT_SETTINGS = {
     'business_name': 'Shree Ganesh Fireworks', 'address': 'Pune, Maharashtra, India', 'gstin': '', 'license_number': '',

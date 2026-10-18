@@ -36,6 +36,8 @@ Open `http://localhost:8000` and sign in as `admin` / `admin123`, then change th
 | `FIREWORKS_SEED_DEMO` | off | `1` loads demo data into an empty database |
 | `FIREWORKS_BACKUP_DIR` | `data/backups` | Where daily and manual database backups are kept |
 | `FIREWORKS_AUTO_BACKUP` | on | `0` turns off the automatic daily backup |
+| `FIREWORKS_ALLOWED_HOSTS` | – | Extra host names the app answers to, e.g. your domain behind HTTPS. IP addresses, `localhost`, one-word computer names and `.local` names always work |
+| `FIREWORKS_TRUST_PROXY` | off | `1` only behind your own reverse proxy: take the visitor's address from `X-Forwarded-For` (for login throttling) |
 
 ## Features
 

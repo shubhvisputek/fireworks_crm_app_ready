@@ -26,6 +26,8 @@ class Config:
     login_max_failures: int = 10
     login_window_seconds: int = 15 * 60
     default_admin_password: str = field(default='admin123', repr=False)
+    trust_proxy: bool = False  # take the client address from X-Forwarded-For (only behind your own proxy)
+    allowed_hosts: tuple = ()  # extra host names, e.g. a domain behind a reverse proxy (FIREWORKS_ALLOWED_HOSTS)
 
     @property
     def is_network_exposed(self):
@@ -45,6 +47,10 @@ class Config:
             port=int(env.get('PORT', '8000')),
             timezone=env.get('FIREWORKS_TIMEZONE', 'Asia/Kolkata'),
             secure_cookies=env.get('FIREWORKS_SECURE_COOKIES') == '1',
+            trust_proxy=env.get('FIREWORKS_TRUST_PROXY') == '1',
+            # Render sets RENDER_EXTERNAL_HOSTNAME to the service's public name.
+            allowed_hosts=tuple(h.strip().lower().rstrip('.') for h in
+                                f"{env.get('FIREWORKS_ALLOWED_HOSTS', '')},{env.get('RENDER_EXTERNAL_HOSTNAME', '')}".split(',') if h.strip()),
             admin_password=env.get('FIREWORKS_ADMIN_PASSWORD') or None,
             require_admin_password=env.get('FIREWORKS_REQUIRE_ADMIN_PASSWORD') == '1',
             seed_demo=env.get('FIREWORKS_SEED_DEMO') == '1',
@@ -54,4 +60,4 @@ class Config:
     def ensure_directories(self):
         for path in (os.path.dirname(self.db_path), os.path.dirname(self.secret_path), self.backup_dir):
             if path:
-                os.makedirs(path, exist_ok=True)
+                os.makedirs(path, mode=0o700, exist_ok=True)

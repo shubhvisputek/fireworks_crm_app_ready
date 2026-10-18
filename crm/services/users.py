@@ -5,9 +5,9 @@ import re
 from crm.domain import validation as v
 from crm.domain.permissions import (ASSIGNABLE_ROLES, OWNER, PERMISSION_LABELS, ROLE_LABELS, ROLE_PERMISSIONS, Permission,
                                     effective_permissions, parse_permission_list)
-from crm.errors import NotFoundError, ValidationError
+from crm.errors import NotFoundError, PermissionDenied, ValidationError
 from crm.security import hash_password
-from crm.services.auth import MIN_PASSWORD_LENGTH, public_user
+from crm.services.auth import MIN_PASSWORD_LENGTH, WEAK_PASSWORDS, public_user
 from crm.services.base import Service
 
 USERNAME_RE = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{2,31}')
@@ -16,6 +16,8 @@ USERNAME_RE = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{2,31}')
 def _password(value, field='Password'):
     if not isinstance(value, str) or len(value) < MIN_PASSWORD_LENGTH:
         raise ValidationError(f'{field} must be at least {MIN_PASSWORD_LENGTH} characters.')
+    if value.lower() in WEAK_PASSWORDS:
+        raise ValidationError(f'{field} is too easy to guess. Choose another one.')
     return value
 
 
@@ -49,6 +51,20 @@ class UserService(Service):
             return None
         return json.dumps(sorted(p.value for p in chosen))
 
+    @staticmethod
+    def _guard_target(actor, target):
+        """Only an owner may change an owner's account (otherwise "Manage users" would be a way to take over the shop)."""
+        if target['role'] == OWNER and actor['role'] != OWNER:
+            raise PermissionDenied("Only the owner can change the owner's account.")
+
+    @staticmethod
+    def _guard_grant(actor, user_like):
+        """Nobody can give someone access they don't have themselves."""
+        extra = effective_permissions(user_like) - effective_permissions(actor)
+        if extra:
+            names = ', '.join(sorted(PERMISSION_LABELS.get(p, p.value) for p in extra))
+            raise PermissionDenied(f'You cannot give access you do not have yourself: {names}.')
+
     def create(self, actor, data):
         username = v.text(data.get('username'), 64)
         if not USERNAME_RE.fullmatch(username):
@@ -57,6 +73,7 @@ class UserService(Service):
         role = self._role(data.get('role') or 'CASHIER')
         display_name = v.optional_text(data.get('display_name'), 60)
         permissions_json = self._permissions_json(role, data.get('permissions'))
+        self._guard_grant(actor, {'role': role, 'permissions_json': permissions_json})
         with self.transaction():
             if self.repos.users.username_exists(username):
                 raise ValidationError('That username is already in use.')
@@ -71,6 +88,7 @@ class UserService(Service):
             target = self.repos.users.get(user_id)
             if not target:
                 raise NotFoundError('User not found.')
+            self._guard_target(actor, target)
             display_name = v.optional_text(data.get('display_name', target['display_name']), 60)
             if target['role'] == OWNER:
                 if 'role' in data and str(data['role']).upper() != OWNER or data.get('permissions') is not None:
@@ -80,6 +98,9 @@ class UserService(Service):
                 role = self._role(data.get('role', target['role']))
                 permissions_json = self._permissions_json(role, data.get('permissions')) if 'permissions' in data else (
                     target['permissions_json'] if role == target['role'] else None)
+                if target['id'] == actor['id'] and (role != target['role'] or permissions_json != target['permissions_json']):
+                    raise PermissionDenied('You cannot change your own role or permissions. Ask the owner.')
+                self._guard_grant(actor, {'role': role, 'permissions_json': permissions_json})
                 self.repos.users.update_profile(user_id, role, display_name, permissions_json)
             updated = self.repos.users.get(user_id)
             self.audit(actor, 'User updated', 'USER', user_id,
@@ -95,6 +116,7 @@ class UserService(Service):
                 raise NotFoundError('User not found.')
             if target['id'] == actor['id']:
                 raise ValidationError('Use the Password button to change your own password.')
+            self._guard_target(actor, target)
             self.repos.users.set_password(user_id, hash_password(password))
             self.audit(actor, 'Password reset', 'USER', user_id, new={'username': target['username']})
 
@@ -106,6 +128,7 @@ class UserService(Service):
             target = self.repos.users.get(user_id)
             if not target:
                 raise NotFoundError('User not found.')
+            self._guard_target(actor, target)
             if not active and target['id'] == actor['id']:
                 raise ValidationError('You cannot deactivate your own account.')
             if not active and target['role'] == OWNER and self.repos.users.count_active_owners() <= 1:

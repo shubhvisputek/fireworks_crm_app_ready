@@ -45,6 +45,16 @@ class SecretStore:
                     self._key = handle.read()
             return self._key
 
+    def rotate(self):
+        """Replace the key: every session signed with the old one stops working."""
+        with self._lock:
+            tmp = f'{self.path}.new'
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, 'wb') as handle:
+                handle.write(secrets.token_bytes(32))
+            os.replace(tmp, self.path)
+            self._key = None
+
 
 class TokenSigner:
     """HMAC-signed, expiring JSON tokens used as session cookies."""
@@ -72,8 +82,13 @@ class TokenSigner:
         return payload
 
 
+# Checked when a username doesn't exist, so a wrong username takes as long as a wrong password
+# (otherwise response times reveal which usernames are real).
+DUMMY_HASH = hash_password(secrets.token_hex(16))
+
+
 class LoginThrottle:
-    """Blocks a username after too many failed logins within a time window."""
+    """Counts failed logins per key (e.g. username+IP, IP, username) within a time window."""
 
     MAX_TRACKED = 10_000
 
@@ -91,15 +106,27 @@ class LoginThrottle:
             self._failures.pop(key, None)
         return attempts
 
-    def is_blocked(self, key, now=None):
+    def is_blocked(self, key, now=None, limit=None):
         with self._lock:
-            return len(self._recent(key, now or time.time())) >= self.max_failures
+            return len(self._recent(key, now or time.time())) >= (limit or self.max_failures)
 
     def record_failure(self, key, now=None):
+        now = now or time.time()
         with self._lock:
-            if len(self._failures) > self.MAX_TRACKED:
-                self._failures.clear()
-            self._failures.setdefault(key, []).append(now or time.time())
+            if len(self._failures) >= self.MAX_TRACKED:
+                self._evict(now)
+            self._failures.setdefault(key, []).append(now)
+
+    def _evict(self, now):
+        """Make room without forgetting the keys that matter: expired entries go first, then the keys
+        with the fewest recent failures. (Clearing everything would let a flood of junk usernames
+        wipe the count for a real account that is being guessed.)"""
+        for key in list(self._failures):
+            self._recent(key, now)
+        if len(self._failures) >= self.MAX_TRACKED:
+            by_weight = sorted(self._failures, key=lambda k: (len(self._failures[k]), self._failures[k][-1]))
+            for key in by_weight[:len(self._failures) - int(self.MAX_TRACKED * 0.9)]:
+                del self._failures[key]
 
     def reset(self, key):
         with self._lock:

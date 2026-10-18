@@ -3,7 +3,16 @@
 const params = new URLSearchParams(location.search);
 const kind = params.get('kind') === 'receipt' ? 'invoice-receipt' : 'invoice-pdf';
 const id = params.get('id') || '';
-const number = (params.get('number') || '').slice(0, 40);
+// The bill number is only a label; anything that doesn't look like one is ignored.
+const number = /^[A-Za-z0-9/-]{1,40}$/.test(params.get('number') || '') ? params.get('number') : '';
+// Print automatically only when the app itself opened this tab; a link from elsewhere needs a click on Print.
+const openedByApp = (() => {
+  try {
+    return Boolean(window.opener) && window.opener.location.origin === location.origin;
+  } catch {
+    return false;
+  }
+})();
 const frame = document.getElementById('doc');
 const title = document.getElementById('title');
 
@@ -21,7 +30,8 @@ if (/^\d+$/.test(id)) {
   document.getElementById('openPdf').href = src;
   title.textContent = `${number || 'Bill'} — ${kind === 'invoice-receipt' ? '80 mm receipt' : 'A4 invoice'}`;
   document.title = `Print ${number || 'bill'}`;
-  frame.addEventListener('load', () => setTimeout(printNow, 400), { once: true });
+  if (openedByApp) frame.addEventListener('load', () => setTimeout(printNow, 400), { once: true });
+  else document.getElementById('hint').textContent = 'Press Print above to print this bill.';
   frame.src = src;
 } else {
   title.textContent = 'No bill selected';

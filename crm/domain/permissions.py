@@ -59,7 +59,7 @@ PERMISSION_LABELS = {
     P.DUES_VIEW: 'Credit dues list', P.EXPENSES_VIEW: 'See all expenses', P.EXPENSES_CREATE: 'Add expenses',
     P.RECURRING_EXPENSES_VIEW: 'See recurring expenses', P.CASH_CLOSING_OWN: 'Close own cash drawer',
     P.CASH_CLOSING_VIEW_ALL: 'See everyone\'s cash closings', P.REPORTS_EXPORT: 'Excel and PDF reports',
-    P.BACKUP_DOWNLOAD: 'Download backups', P.BACKUP_RESTORE: 'Restore backups', P.SETTINGS_MANAGE: 'Business settings',
+    P.BACKUP_DOWNLOAD: 'Download the full data backup (every bill, customer and the audit log)', P.BACKUP_RESTORE: 'Restore backups (owner only)', P.SETTINGS_MANAGE: 'Business settings',
     P.USERS_MANAGE: 'Manage users', P.AUDIT_VIEW: 'Audit log',
 }
 
@@ -89,7 +89,7 @@ ROLE_PERMISSIONS = {
     # Accounts created before roles existed keep exactly the access they had.
     STAFF: frozenset({
         P.DASHBOARD_VIEW, P.ANALYTICS_VIEW, P.PROFIT_VIEW, P.BILLING_CREATE, P.HELD_BILLS_USE, P.INVOICE_PRINT,
-        P.SALES_VIEW_OWN, P.PRODUCTS_LIST, P.EXPENSES_VIEW, P.EXPENSES_CREATE, P.REPORTS_EXPORT, P.BACKUP_DOWNLOAD,
+        P.SALES_VIEW_OWN, P.PRODUCTS_LIST, P.EXPENSES_VIEW, P.EXPENSES_CREATE, P.REPORTS_EXPORT,
         P.CASH_CLOSING_OWN,
     }),
 }

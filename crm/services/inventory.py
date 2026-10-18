@@ -72,10 +72,10 @@ class InventoryService(Service):
             self.audit(actor, 'Stock removed', 'INVENTORY', product['id'], new={'qty': qty, 'reason': data.get('reason')})
         return self.repos.inventory.stock(product['id'])
 
-    def ledger(self, product_id, start=None, end=None):
+    def ledger(self, actor, product_id, start=None, end=None):
         start = v.iso_date(start, 'Start date') or '1900-01-01'
         end = v.iso_date(end, 'End date') or self.today()
-        return self.repos.inventory.ledger(v.integer_id(product_id, 'Product'), start, end)
+        return self.visible(actor, self.repos.inventory.ledger(v.integer_id(product_id, 'Product'), start, end))
 
     def record_purchase(self, actor, data):
         items = data.get('items') or []

@@ -19,12 +19,13 @@ def login(ctx):
         body = ctx.body()
     except ValidationError:
         raise ValidationError('Invalid login request.')
-    user = ctx.services.auth.login(body.get('username', ''), body.get('password', ''))
+    user = ctx.services.auth.login(body.get('username', ''), body.get('password', ''), ctx.app.client_ip(ctx.request))
     ctx.start_session(user)
     return {'ok': True, 'user': public_user(user), 'limits': shop_limits(ctx)}
 
 
 def logout(ctx):
+    ctx.services.auth.logout(ctx.app.session_payload(ctx.request))
     ctx.end_session()
     return {'ok': True}
 

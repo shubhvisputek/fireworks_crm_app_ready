@@ -1,10 +1,18 @@
 """Login, sessions and password changes."""
+import secrets
+
 from crm.domain.permissions import ROLE_LABELS, effective_permissions
 from crm.errors import AuthenticationError, RateLimited, ValidationError
-from crm.security import hash_password, verify_password
+from crm.security import DUMMY_HASH, hash_password, verify_password
 from crm.services.base import Service
 
 MIN_PASSWORD_LENGTH = 8
+# Failed logins allowed per 15 minutes. Per username *and* address, so one attacker can't lock the owner out
+# for everyone; per address, against guessing many accounts; per username overall, against many addresses.
+PAIR_LIMIT, IP_LIMIT, USER_LIMIT = 10, 30, 100
+# The demo password and the most common passwords are refused when setting a password.
+WEAK_PASSWORDS = frozenset({'admin123', 'password', 'password1', 'password123', '12345678', '123456789',
+                            '1234567890', 'qwerty123', 'iloveyou', 'admin1234', 'welcome1', 'fireworks', 'abcd1234'})
 
 
 def public_user(user):
@@ -24,15 +32,18 @@ class AuthService(Service):
         super().__init__(*args, **kwargs)
         self.throttle = throttle
 
-    def login(self, username, password):
-        key = str(username or '').strip().lower()
-        if self.throttle.is_blocked(key):
+    def login(self, username, password, client_ip=''):
+        name = str(username or '').strip().lower()
+        keys = {f'login:{name}|{client_ip}': PAIR_LIMIT, f'login-ip:{client_ip}': IP_LIMIT, f'login-user:{name}': USER_LIMIT}
+        if any(self.throttle.is_blocked(key, limit=limit) for key, limit in keys.items()):
             raise RateLimited('Too many failed login attempts. Try again in 15 minutes.')
         user = self.repos.users.get_active_by_username(str(username or ''))
-        if not user or not verify_password(str(password or ''), user['password_hash']):
-            self.throttle.record_failure(key)
+        valid = verify_password(str(password or ''), user['password_hash'] if user else DUMMY_HASH)
+        if not user or not valid:
+            for key in keys:
+                self.throttle.record_failure(key)
             raise AuthenticationError('Invalid username or password')
-        self.throttle.reset(key)
+        self.throttle.reset(f'login:{name}|{client_ip}')
         return user
 
     def verify_credentials(self, username, password, purpose='approval'):
@@ -41,28 +52,39 @@ class AuthService(Service):
         if self.throttle.is_blocked(key):
             raise RateLimited('Too many failed attempts. Try again in 15 minutes.')
         user = self.repos.users.get_active_by_username(str(username or ''))
-        if not user or not verify_password(str(password or ''), user['password_hash']):
+        valid = verify_password(str(password or ''), user['password_hash'] if user else DUMMY_HASH)
+        if not user or not valid:
             self.throttle.record_failure(key)
             raise ValidationError('Approver username or password is incorrect.')
         self.throttle.reset(key)
         return user
 
     def session_payload(self, user):
-        return {'uid': user['id'], 'sv': user['session_version'], 'exp': self.clock.timestamp() + 86400 * self.config.session_days}
+        # sid identifies this one sign-in, so logging out can revoke it without signing out the user's other devices.
+        return {'uid': user['id'], 'sv': user['session_version'], 'sid': secrets.token_hex(16),
+                'exp': self.clock.timestamp() + 86400 * self.config.session_days}
 
     def user_for_session(self, payload):
         """The active user a verified session token belongs to, or None if revoked."""
-        if not payload:
+        if not payload or not isinstance(payload.get('sid'), str) or self.repos.sessions.is_revoked(payload['sid']):
             return None
         user = self.repos.users.get_active(payload.get('uid'))
         if not user or payload.get('sv', 0) != user['session_version']:
             return None
         return user
 
+    def logout(self, payload):
+        """Revoke this sign-in on the server; the cookie is also cleared in the browser."""
+        if payload and isinstance(payload.get('sid'), str):
+            with self.transaction():
+                self.repos.sessions.revoke(payload['sid'], int(payload.get('exp', 0)), self.clock.timestamp())
+
     def change_password(self, actor, current_password, new_password):
         new_password = str(new_password or '')
         if len(new_password) < MIN_PASSWORD_LENGTH:
             raise ValidationError(f'New password must be at least {MIN_PASSWORD_LENGTH} characters.')
+        if new_password.lower() in WEAK_PASSWORDS:
+            raise ValidationError('That password is too easy to guess. Choose another one.')
         user = self.repos.users.get(actor['id'])
         if not verify_password(str(current_password or ''), user['password_hash']):
             raise ValidationError('Current password is incorrect.')

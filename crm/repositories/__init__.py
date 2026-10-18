@@ -3,7 +3,8 @@ from crm.repositories.insights import InsightRepository
 from crm.repositories.inventory import InventoryRepository
 from crm.repositories.invoices import InvoiceRepository
 from crm.repositories.misc import (AuditQueryRepository, AuditRepository, BackupRepository, CashClosingRepository, ExpenseRepository,
-                                   HeldBillRepository, PurchaseRepository, SequenceRepository, SettingsRepository, SupplierRepository)
+                                   HeldBillRepository, PurchaseRepository, SequenceRepository, SessionRepository, SettingsRepository,
+                                   SupplierRepository)
 from crm.repositories.products import ProductRepository
 from crm.repositories.reports import ReportRepository
 from crm.repositories.users import UserRepository
@@ -25,6 +26,7 @@ class Repositories:
         self.settings = SettingsRepository(conn)
         self.audit = AuditRepository(conn)
         self.sequences = SequenceRepository(conn)
+        self.sessions = SessionRepository(conn)
         self.reports = ReportRepository(conn)
         self.insights = InsightRepository(conn)
         self.backup = BackupRepository(conn)

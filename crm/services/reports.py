@@ -1,9 +1,22 @@
 """Dashboard, analytics and the JSON backup."""
 import datetime as dt
+import json
 
 from crm.domain import validation as v
 from crm.domain.money import money
+from crm.domain.permissions import Permission
+from crm.domain.visibility import strip_fields
 from crm.services.base import Service
+
+
+def strip_json_text(text):
+    """Cost/profit fields removed from a JSON string (audit log values)."""
+    if not text:
+        return text
+    try:
+        return json.dumps(strip_fields(json.loads(text)))
+    except (TypeError, ValueError):
+        return None
 
 PRESETS = ('today', 'yesterday', '7d', 'month', 'season')
 
@@ -33,15 +46,27 @@ class ReportService(Service):
             return f'{today.year}-10-01', f'{today.year}-10-31'
         return today.isoformat(), today.isoformat()
 
+    def own_kpis(self, start, end, user_id):
+        """Sales figures for one person's bills (people without shop-wide analytics see only their own)."""
+        t = self.repos.insights.totals(start, end, user_id)
+        return {'sales': money(t['sales']), 'bills': t['bills'], 'avg_bill': money(t['avg_bill']), 'discounts': money(t['discounts'])}
+
     def dashboard(self, actor, day=None):
         day = v.iso_date(day, 'Date') or self.today()
         date = dt.date.fromisoformat(day)
         yesterday = (date - dt.timedelta(days=1)).isoformat()
         last_week = (date - dt.timedelta(days=7)).isoformat()
         low_count, attention = self.repos.reports.low_stock(limit=10)
+        shop_wide = self.can(actor, Permission.ANALYTICS_VIEW)
+
+        def kpis(d):
+            return self.sales_kpis(d, d) if shop_wide else self.own_kpis(d, d, actor['id'])
+        expenses = (self.services.expenses.total(day, day) if self.can(actor, Permission.EXPENSES_VIEW)
+                    else money(sum(e['amount'] for e in self.services.expenses.list(actor, day, day))))
         return self.visible(actor, {
-            'today': self.sales_kpis(day, day), 'yesterday': self.sales_kpis(yesterday, yesterday),
-            'last_week': self.sales_kpis(last_week, last_week), 'expenses': self.services.expenses.total(day, day),
+            'scope': 'all' if shop_wide else 'own',
+            'today': kpis(day), 'yesterday': kpis(yesterday),
+            'last_week': kpis(last_week), 'expenses': expenses,
             'low_stock': low_count, 'inventory_cost': money(self.repos.reports.inventory_cost()),
             'target': self.services.settings.get_targets().get('daily'), 'attention': attention,
             'storage': self.services.inventory.storage_status(),
@@ -64,8 +89,14 @@ class ReportService(Service):
         })
 
     def backup(self, actor):
-        data = self.visible(actor, self.repos.backup.dump())
-        # Staff can download backups, so credentials never leave the server.
+        dump = self.repos.backup.dump()
+        if not self.can(actor, Permission.PROFIT_VIEW):
+            # Audit before/after values are JSON text, so cost prices inside them are removed here too.
+            for entry in dump.get('audit_logs', []):
+                for key in ('previous_json', 'new_json'):
+                    entry[key] = strip_json_text(entry.get(key))
+        data = self.visible(actor, dump)
+        # Credentials never leave the server, even in a backup.
         for user in data.get('users', []):
             user.pop('password_hash', None)
             user.pop('session_version', None)
