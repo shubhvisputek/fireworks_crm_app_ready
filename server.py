@@ -18,7 +18,18 @@ EXPORT_DIR = os.path.join(BASE_DIR, 'exports')
 BILLS_DIR = os.path.join(BASE_DIR, 'bills')
 SECRET_PATH = os.getenv('FIREWORKS_SECRET', os.path.join(BASE_DIR, 'data', '.secret'))
 PORT = int(os.getenv('PORT', '8000'))
+HOST = os.getenv('HOST', '127.0.0.1')
 COOKIE = 'fw_session'
+MAX_BODY_BYTES = int(os.getenv('FIREWORKS_MAX_BODY_BYTES', str(10 * 1024 * 1024)))
+LOGIN_MAX_FAILURES = 10
+LOGIN_WINDOW_SECONDS = 15 * 60
+SECURITY_HEADERS = {
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'same-origin',
+    # Inline handlers are used throughout the UI, so scripts still allow 'unsafe-inline'.
+    'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+}
 
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 os.makedirs(EXPORT_DIR, exist_ok=True)
@@ -55,6 +66,42 @@ def allocate_discount(discount, line_totals):
     for index in order[:remainder]:
         shares[index] += 1
     return [share / 100 for share in shares]
+
+
+def is_loopback_host(host):
+    return host in ('127.0.0.1', 'localhost', '::1')
+
+
+def clean_date(value, field, required=False):
+    value=str(value or '').strip()
+    if not value:
+        if required: raise ValueError(f'{field} is required.')
+        return None
+    try:
+        return dt.date.fromisoformat(value).isoformat()
+    except ValueError:
+        raise ValueError(f'{field} must be a valid date (YYYY-MM-DD).')
+
+
+def excel_safe(value):
+    # Stop text such as "=HYPERLINK(...)" being written as a live spreadsheet formula.
+    if isinstance(value, str) and value[:1] in ('=', '+', '-', '@', '\t', '\r'):
+        return "'" + value
+    return value
+
+
+_login_failures={}
+
+def login_blocked(username):
+    now=dt.datetime.now().timestamp()
+    attempts=[t for t in _login_failures.get(username,[]) if now-t < LOGIN_WINDOW_SECONDS]
+    _login_failures[username]=attempts
+    return len(attempts) >= LOGIN_MAX_FAILURES
+
+
+def record_login_failure(username):
+    if len(_login_failures)>10000: _login_failures.clear()
+    _login_failures.setdefault(username,[]).append(dt.datetime.now().timestamp())
 
 
 def json_response(obj, status=200):
@@ -96,7 +143,7 @@ def hash_password(password, salt=None):
 def safe_user(u):
     if not u: return None
     d=dict(u)
-    d.pop('password_hash',None)
+    d.pop('password_hash',None); d.pop('session_version',None)
     return d
 
 
@@ -120,7 +167,7 @@ def staff_api_allowed(method, path):
         return bool(
             path in {
                 '/api/sales', '/api/expenses', '/api/recurring-expenses',
-                '/api/held-bills'
+                '/api/held-bills', '/api/password'
             }
             or re.fullmatch(r'/api/held-bills/resume/\d+', path)
         )
@@ -261,6 +308,9 @@ CREATE TABLE IF NOT EXISTS sequence (
 def init_db():
     conn = db(); exec_script(conn, SCHEMA)
     product_columns={r['name'] for r in conn.execute('PRAGMA table_info(products)').fetchall()}
+    user_columns={r['name'] for r in conn.execute('PRAGMA table_info(users)').fetchall()}
+    if 'session_version' not in user_columns:
+        conn.execute('ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0')
     for column, definition in {
         'cost_price':'REAL NOT NULL DEFAULT 0', 'mrp':'REAL NOT NULL DEFAULT 0',
         'retail_selling_price':'REAL NOT NULL DEFAULT 0', 'wholesale_selling_price':'REAL NOT NULL DEFAULT 0',
@@ -284,6 +334,8 @@ def init_db():
             conn.close(); raise RuntimeError('Set FIREWORKS_ADMIN_PASSWORD before initializing the hosted database.')
         if admin_password and len(admin_password)<12:
             conn.close(); raise RuntimeError('FIREWORKS_ADMIN_PASSWORD must be at least 12 characters.')
+        if not admin_password and not is_loopback_host(HOST):
+            conn.close(); raise RuntimeError('Set FIREWORKS_ADMIN_PASSWORD before exposing the app on a network (HOST is not localhost).')
         conn.execute('INSERT INTO users(username,password_hash,role,created_at) VALUES(?,?,?,?)', ('admin', hash_password(admin_password or 'admin123'), 'OWNER', now_iso()))
     if conn.execute('SELECT COUNT(*) c FROM business_settings').fetchone()['c'] == 0:
         settings = {
@@ -409,9 +461,15 @@ def audit(conn,user_id,action,etype,eid,old=None,new=None):
     conn.execute('INSERT INTO audit_logs(user_id,action,entity_type,entity_id,previous_json,new_json,created_at) VALUES(?,?,?,?,?,?,?)', (user_id,action,etype,eid,json.dumps(old,default=str) if old else None,json.dumps(new,default=str) if new else None,now_iso()))
 
 
-def parse_body(handler):
+def read_body(handler):
     length=int(handler.headers.get('Content-Length','0') or 0)
-    raw=handler.rfile.read(length) if length else b''
+    if length<0 or length>MAX_BODY_BYTES:
+        raise ValueError(f'Request is too large (limit {MAX_BODY_BYTES//(1024*1024)} MB).')
+    return handler.rfile.read(length) if length else b''
+
+
+def parse_body(handler):
+    raw=read_body(handler)
     ctype=handler.headers.get('Content-Type','')
     if 'application/json' in ctype:
         return json.loads(raw or b'{}')
@@ -421,7 +479,7 @@ def parse_body(handler):
 
 
 def parse_multipart(handler):
-    length=int(handler.headers.get('Content-Length','0') or 0); raw=handler.rfile.read(length)
+    raw=read_body(handler)
     ctype=handler.headers.get('Content-Type','')
     header=b'Content-Type: '+ctype.encode()+b'\r\nMIME-Version: 1.0\r\n\r\n'
     msg=BytesParser(policy=default).parsebytes(header+raw)
@@ -622,6 +680,9 @@ def build_backup(conn):
     data={}
     for t in tables:
         rows=conn.execute(f'SELECT * FROM {t}').fetchall(); data[t]=[dict(r) for r in rows]
+    # Backups are downloadable by staff, so never include credentials.
+    for user in data.get('users',[]):
+        user.pop('password_hash',None); user.pop('session_version',None)
     return data
 
 class Handler(BaseHTTPRequestHandler):
@@ -632,6 +693,7 @@ class Handler(BaseHTTPRequestHandler):
         if data is None and isinstance(ctype,(bytes,bytearray)):
             data=ctype; ctype='application/json'
         self.send_response(status); self.send_header('Content-Type',ctype); self.send_header('Cache-Control','no-store')
+        for k,v in SECURITY_HEADERS.items(): self.send_header(k,v)
         if extra_headers:
             for k,v in extra_headers.items(): self.send_header(k,v)
         self.send_header('Content-Length',str(len(data))); self.end_headers(); self.wfile.write(data)
@@ -642,7 +704,15 @@ class Handler(BaseHTTPRequestHandler):
         if not m: return None
         p=verify_token(urllib.parse.unquote(m.group(2)))
         if not p: return None
-        conn=db(); u=conn.execute('SELECT * FROM users WHERE id=? AND active=1',(p.get('uid'),)).fetchone(); conn.close(); return dict(u) if u else None
+        conn=db(); u=conn.execute('SELECT * FROM users WHERE id=? AND active=1',(p.get('uid'),)).fetchone(); conn.close()
+        if not u or p.get('sv',0)!=u['session_version']: return None
+        return dict(u)
+
+    def same_origin(self):
+        # Reject cross-site POSTs (CSRF). Browsers send Origin on POST; non-browser clients may omit it.
+        origin=self.headers.get('Origin')
+        if not origin: return True
+        return urllib.parse.urlparse(origin).netloc==self.headers.get('Host','')
 
     def require_auth(self):
         u=self.current_user()
@@ -745,27 +815,37 @@ class Handler(BaseHTTPRequestHandler):
                 pid=int(qs.get('product_id',['0'])[0]); start=qs.get('start',['1900-01-01'])[0]; end=qs.get('end',[today()])[0]
                 rows=conn.execute('SELECT m.*,p.name,p.sku FROM inventory_movements m JOIN products p ON p.id=m.product_id WHERE m.product_id=? AND date(m.created_at) BETWEEN ? AND ? ORDER BY m.created_at,id',(pid,start,end)).fetchall(); self.send(*json_response(serialize_rows(rows))); return
             if path=='/api/backup':
-                data=json.dumps(build_backup(conn),indent=2,default=str).encode(); fn=f'fireworks-backup-{dt.datetime.now().strftime("%Y%m%d-%H%M%S")}.json'; fp=os.path.join(EXPORT_DIR,fn); open(fp,'wb').write(data); self.send(200,'application/json',data,{'Content-Disposition':f'attachment; filename="{fn}"'}); return
+                data=json.dumps(build_backup(conn),indent=2,default=str).encode(); fn=f'fireworks-backup-{dt.datetime.now().strftime("%Y%m%d-%H%M%S")}.json'; self.send(200,'application/json',data,{'Content-Disposition':f'attachment; filename="{fn}"'}); return
             if path=='/api/export/sales.xlsx':
-                fp=make_sales_xlsx(conn); data=open(fp,'rb').read(); self.send(200,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',data,{'Content-Disposition':f'attachment; filename="{os.path.basename(fp)}"'}); return
+                fp=make_sales_xlsx(conn); data=read_and_remove(fp); self.send(200,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',data,{'Content-Disposition':f'attachment; filename="{os.path.basename(fp)}"'}); return
             if path=='/api/export/sales-detailed.xlsx':
-                fp=make_detailed_sales_xlsx(conn); data=open(fp,'rb').read(); self.send(200,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',data,{'Content-Disposition':f'attachment; filename="{os.path.basename(fp)}"'}); return
+                fp=make_detailed_sales_xlsx(conn); data=read_and_remove(fp); self.send(200,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',data,{'Content-Disposition':f'attachment; filename="{os.path.basename(fp)}"'}); return
             if path=='/api/export/sales.pdf':
-                fp=make_sales_pdf(conn); data=open(fp,'rb').read(); self.send(200,'application/pdf',data,{'Content-Disposition':f'attachment; filename="{os.path.basename(fp)}"'}); return
+                fp=make_sales_pdf(conn); data=read_and_remove(fp); self.send(200,'application/pdf',data,{'Content-Disposition':f'attachment; filename="{os.path.basename(fp)}"'}); return
             if path.startswith('/api/invoice-pdf/'):
                 iid=int(path.rsplit('/',1)[1]); fp=make_invoice_pdf(conn,iid); data=open(fp,'rb').read(); self.send(200,'application/pdf',data,{'Content-Disposition':f'inline; filename="{os.path.basename(fp)}"'}); return
             self.send(*json_response({'error':'Not found'},404))
         except Exception as e:
-            traceback.print_exc(); self.send(*json_response({'error':str(e)},500))
+            traceback.print_exc(); self.send(*json_response({'error':'Something went wrong. Please try again.'},500))
         finally: conn.close()
 
     def do_POST(self):
         path=urllib.parse.urlparse(self.path).path
+        if not self.same_origin():
+            self.send(*json_response({'error':'Cross-site request rejected.'},403)); return
         if path=='/api/login':
-            b=parse_body(self)
-            conn=db(); u=conn.execute('SELECT * FROM users WHERE username=? AND active=1',(b.get('username',''),)).fetchone(); ok=bool(u and check_password(b.get('password',''),u['password_hash'])); conn.close()
-            if not ok: self.send(*json_response({'error':'Invalid username or password'},401)); return
-            tok=sign_token({'uid':u['id'],'exp':int(dt.datetime.now().timestamp())+86400*7}); secure='; Secure' if os.getenv('FIREWORKS_SECURE_COOKIES') == '1' else ''; self.send(*json_response({'ok':True,'user':safe_user(u)}), extra_headers={'Set-Cookie':f'{COOKIE}={urllib.parse.quote(tok)}; HttpOnly; SameSite=Lax; Path=/{secure}'}); return
+            try: b=parse_body(self)
+            except Exception: self.send(*json_response({'error':'Invalid login request.'},400)); return
+            if not isinstance(b,dict): self.send(*json_response({'error':'Invalid login request.'},400)); return
+            username=str(b.get('username','')).strip().lower()
+            if login_blocked(username):
+                self.send(*json_response({'error':'Too many failed login attempts. Try again in 15 minutes.'},429)); return
+            conn=db(); u=conn.execute('SELECT * FROM users WHERE username=? AND active=1',(b.get('username',''),)).fetchone(); ok=bool(u and check_password(str(b.get('password','')),u['password_hash'])); conn.close()
+            if not ok:
+                record_login_failure(username)
+                self.send(*json_response({'error':'Invalid username or password'},401)); return
+            _login_failures.pop(username,None)
+            tok=sign_token({'uid':u['id'],'sv':u['session_version'],'exp':int(dt.datetime.now().timestamp())+86400*7}); secure='; Secure' if os.getenv('FIREWORKS_SECURE_COOKIES') == '1' else ''; self.send(*json_response({'ok':True,'user':safe_user(u)}), extra_headers={'Set-Cookie':f'{COOKIE}={urllib.parse.quote(tok)}; HttpOnly; SameSite=Lax; Path=/{secure}'}); return
         if path=='/api/logout':
             secure='; Secure' if os.getenv('FIREWORKS_SECURE_COOKIES') == '1' else ''; self.send(*json_response({'ok':True}), extra_headers={'Set-Cookie':f'{COOKIE}=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax{secure}'}); return
         u=self.require_auth()
@@ -812,7 +892,7 @@ class Handler(BaseHTTPRequestHandler):
                     owners=conn.execute('SELECT COUNT(*) FROM users WHERE role="OWNER" AND active=1').fetchone()[0]
                     if owners<=1:
                         raise ValueError('At least one active administrator must remain.')
-                conn.execute('UPDATE users SET active=? WHERE id=?',(active,user_id))
+                conn.execute('UPDATE users SET active=?,session_version=session_version+? WHERE id=?',(active,0 if active else 1,user_id))
                 audit(conn,u['id'],'User activated' if active else 'User deactivated','USER',user_id,
                     old={'username':target['username'],'active':target['active']},
                     new={'username':target['username'],'active':active})
@@ -945,12 +1025,14 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/api/expenses':
                 b=parse_body(self); amt=num(b.get('amount')); 
                 if amt<=0: raise ValueError('Expense amount must be greater than 0.')
-                conn.execute('INSERT INTO expenses(expense_date,category,amount,payment_mode,vendor,notes,attachment_name,recurring,user_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',(b.get('expense_date') or today(),b.get('category'),amt,b.get('payment_mode','Cash'),b.get('vendor'),b.get('notes'),b.get('attachment_name'),1 if parse_bool(b.get('recurring')) else 0,u['id'],now_iso())); eid=conn.execute('SELECT last_insert_rowid()').fetchone()[0]; audit(conn,u['id'],'Expense added','EXPENSE',eid,new=b); conn.commit(); self.send(*json_response({'ok':True,'id':eid})); return
+                expense_date=clean_date(b.get('expense_date'),'Expense date') or today()
+                conn.execute('INSERT INTO expenses(expense_date,category,amount,payment_mode,vendor,notes,attachment_name,recurring,user_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',(expense_date,b.get('category'),amt,b.get('payment_mode','Cash'),b.get('vendor'),b.get('notes'),b.get('attachment_name'),1 if parse_bool(b.get('recurring')) else 0,u['id'],now_iso())); eid=conn.execute('SELECT last_insert_rowid()').fetchone()[0]; audit(conn,u['id'],'Expense added','EXPENSE',eid,new=b); conn.commit(); self.send(*json_response({'ok':True,'id':eid})); return
             if path=='/api/recurring-expenses':
                 b=parse_body(self); amount=num(b.get('amount'))
                 if amount<=0: raise ValueError('Recurring expense amount must be greater than 0.')
                 if not b.get('category') or not b.get('frequency') or not b.get('start_date'): raise ValueError('Category, frequency, and start date are required.')
-                conn.execute('INSERT INTO recurring_expenses(category,amount,payment_mode,vendor,frequency,start_date,end_date,active,notes,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',(b.get('category'),amount,b.get('payment_mode','Cash'),b.get('vendor'),b.get('frequency'),b.get('start_date'),b.get('end_date') or None,1,b.get('notes'),now_iso()))
+                start_date=clean_date(b.get('start_date'),'Start date',required=True); end_date=clean_date(b.get('end_date'),'End date')
+                conn.execute('INSERT INTO recurring_expenses(category,amount,payment_mode,vendor,frequency,start_date,end_date,active,notes,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',(b.get('category'),amount,b.get('payment_mode','Cash'),b.get('vendor'),b.get('frequency'),start_date,end_date,1,b.get('notes'),now_iso()))
                 rid=conn.execute('SELECT last_insert_rowid()').fetchone()[0]; audit(conn,u['id'],'Recurring expense added','RECURRING_EXPENSE',rid,new=b); conn.commit(); self.send(*json_response({'ok':True,'id':rid})); return
             if path=='/api/pricing/bulk':
                 b=parse_body(self); products=b.get('product_ids') or []; pct=float(b.get('pct',0)); field=b.get('field','retail_price'); eff=b.get('effective_date') or today(); conn.execute('BEGIN')
@@ -972,12 +1054,17 @@ class Handler(BaseHTTPRequestHandler):
                 if len(newp)<8: raise ValueError('New password must be at least 8 characters.')
                 urow=conn.execute('SELECT * FROM users WHERE id=?',(u['id'],)).fetchone()
                 if not check_password(oldp,urow['password_hash']): raise ValueError('Current password is incorrect.')
-                conn.execute('UPDATE users SET password_hash=? WHERE id=?',(hash_password(newp),u['id'])); audit(conn,u['id'],'Password changed','USER',u['id']); conn.commit(); self.send(*json_response({'ok':True})); return
+                sv=urow['session_version']+1
+                conn.execute('UPDATE users SET password_hash=?,session_version=? WHERE id=?',(hash_password(newp),sv,u['id'])); audit(conn,u['id'],'Password changed','USER',u['id']); conn.commit()
+                tok=sign_token({'uid':u['id'],'sv':sv,'exp':int(dt.datetime.now().timestamp())+86400*7}); secure='; Secure' if os.getenv('FIREWORKS_SECURE_COOKIES') == '1' else ''
+                self.send(*json_response({'ok':True}), extra_headers={'Set-Cookie':f'{COOKIE}={urllib.parse.quote(tok)}; HttpOnly; SameSite=Lax; Path=/{secure}'}); return
             if path=='/api/settings':
                 b=parse_body(self); st=b.get('settings') or {}; tg=b.get('targets') or {}; old=settings(conn); conn.execute('UPDATE business_settings SET data_json=? WHERE id=1',(json.dumps(st),)); conn.execute('UPDATE targets SET daily=?,weekly=?,monthly=?,seasonal=?,season_start=?,season_end=? WHERE id=1',(num(tg.get('daily')),num(tg.get('weekly')),num(tg.get('monthly')),num(tg.get('seasonal')),tg.get('season_start'),tg.get('season_end'))); audit(conn,u['id'],'Settings updated','SETTINGS',1,old={'settings':old},new=b); conn.commit(); self.send(*json_response({'ok':True})); return
             self.send(*json_response({'error':'Not found'},404))
         except Exception as e:
-            conn.rollback(); traceback.print_exc(); self.send(*json_response({'error':str(e)},400))
+            conn.rollback(); traceback.print_exc()
+            message=str(e) if isinstance(e,ValueError) and not isinstance(e,json.JSONDecodeError) else ('That record conflicts with an existing one (duplicate value).' if isinstance(e,sqlite3.IntegrityError) else 'The request could not be processed.')
+            self.send(*json_response({'error':message},400))
         finally: conn.close()
 
 
@@ -999,11 +1086,17 @@ def resolve_preset(p):
         y=d.year; return f'{y}-10-01',f'{y}-10-31'
     return d.isoformat(),d.isoformat()
 
+def read_and_remove(fp):
+    data=open(fp,'rb').read()
+    try: os.remove(fp)
+    except OSError: pass
+    return data
+
 def make_sales_xlsx(conn):
     wb=Workbook(); ws=wb.active; ws.title='Sales'
     headers=['Invoice','Date','Customer','Customer Type','Pricing Mode','Subtotal','Discount','Total','Received']
     ws.append(headers)
-    for r in conn.execute('SELECT invoice_number,invoice_date,customer_name_snapshot,customer_type_snapshot,pricing_mode,subtotal,discount,grand_total,amount_received FROM invoices WHERE status="FINALIZED" ORDER BY invoice_date,id'): ws.append(list(r))
+    for r in conn.execute('SELECT invoice_number,invoice_date,customer_name_snapshot,customer_type_snapshot,pricing_mode,subtotal,discount,grand_total,amount_received FROM invoices WHERE status="FINALIZED" ORDER BY invoice_date,id'): ws.append([excel_safe(v) for v in r])
     fp=os.path.join(EXPORT_DIR,f'sales-{dt.datetime.now().strftime("%Y%m%d-%H%M%S")}.xlsx'); wb.save(fp); return fp
 
 def make_detailed_sales_xlsx(conn):
@@ -1011,17 +1104,17 @@ def make_detailed_sales_xlsx(conn):
     sales.append(['Invoice','Date','Customer','Customer Type','Pricing Mode','Subtotal','Discount','Total','Received','Outstanding','Status','Notes'])
     sales_rows=conn.execute('SELECT * FROM invoices WHERE status="FINALIZED" ORDER BY invoice_date,id').fetchall()
     for inv in sales_rows:
-        sales.append([inv['invoice_number'],inv['invoice_date'],inv['customer_name_snapshot'],inv['customer_type_snapshot'],inv['pricing_mode'],inv['subtotal'],inv['discount'],inv['grand_total'],inv['amount_received'],inv['outstanding'],inv['status'],inv['notes']])
+        sales.append([excel_safe(v) for v in [inv['invoice_number'],inv['invoice_date'],inv['customer_name_snapshot'],inv['customer_type_snapshot'],inv['pricing_mode'],inv['subtotal'],inv['discount'],inv['grand_total'],inv['amount_received'],inv['outstanding'],inv['status'],inv['notes']]])
     items=wb.create_sheet('Sale Items')
     items.append(['Invoice','Date','Customer','SKU','Product','Quantity','Unit','Base Quantity','Unit Price','Discount','Line Total','Cost Total','Gross Profit'])
     for row in conn.execute('SELECT i.invoice_number,i.invoice_date,i.customer_name_snapshot,ii.sku_snapshot,ii.product_name_snapshot,ii.qty_input,ii.sell_unit,ii.qty_base,ii.unit_price,ii.discount,ii.taxable_amount,ii.cost_snapshot FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id WHERE i.status="FINALIZED" ORDER BY i.invoice_date,i.id,ii.id'):
         line_total=money(row['unit_price']*row['qty_input']-row['discount'])
         cost_total=money(row['cost_snapshot']*row['qty_input'])
-        items.append([row['invoice_number'],row['invoice_date'],row['customer_name_snapshot'],row['sku_snapshot'],row['product_name_snapshot'],row['qty_input'],row['sell_unit'],row['qty_base'],row['unit_price'],row['discount'],line_total,cost_total,money(line_total-cost_total)])
+        items.append([excel_safe(v) for v in [row['invoice_number'],row['invoice_date'],row['customer_name_snapshot'],row['sku_snapshot'],row['product_name_snapshot'],row['qty_input'],row['sell_unit'],row['qty_base'],row['unit_price'],row['discount'],line_total,cost_total,money(line_total-cost_total)]])
     payments=wb.create_sheet('Payments')
     payments.append(['Invoice','Sale Date','Customer','Payment Date','Mode','Amount','Reference','Notes'])
     for row in conn.execute('SELECT i.invoice_number,i.invoice_date,i.customer_name_snapshot,p.payment_date,p.mode,p.amount,p.reference,p.notes FROM payments p JOIN invoices i ON i.id=p.invoice_id WHERE i.status="FINALIZED" ORDER BY i.invoice_date,i.id,p.id'):
-        payments.append(list(row))
+        payments.append([excel_safe(v) for v in row])
     for sheet in wb.worksheets:
         sheet.freeze_panes='A2'; sheet.auto_filter.ref=sheet.dimensions
         for column in sheet.columns:
@@ -1162,6 +1255,6 @@ def make_invoice_pdf(conn,iid):
 
 if __name__=='__main__':
     init_db()
-    print(f'Fireworks CRM running at http://localhost:{PORT}')
-    print('Login username: admin; password is configured through FIREWORKS_ADMIN_PASSWORD.' if os.getenv('FIREWORKS_ADMIN_PASSWORD') else 'Local demo login: admin / admin123')
-    ThreadingHTTPServer(('0.0.0.0',PORT),Handler).serve_forever()
+    print(f'Fireworks CRM running at http://{"localhost" if is_loopback_host(HOST) else HOST}:{PORT}')
+    print('Login username: admin; password is configured through FIREWORKS_ADMIN_PASSWORD.' if os.getenv('FIREWORKS_ADMIN_PASSWORD') else 'Local demo login: admin / admin123 (change it in Settings)')
+    ThreadingHTTPServer((HOST,PORT),Handler).serve_forever()

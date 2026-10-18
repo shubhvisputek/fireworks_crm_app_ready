@@ -19,6 +19,8 @@ python server.py
 
 Open `http://localhost:8000`.
 
+By default the server only listens on this computer (`127.0.0.1`). To reach it from other devices on your network, set `HOST=0.0.0.0` and also set `FIREWORKS_ADMIN_PASSWORD` (at least 12 characters) before the first run; the server refuses to start a network-exposed database with the demo password.
+
 For one shared online instance that both computers can use, see [DEPLOYMENT.md](DEPLOYMENT.md). The hosted setup requires a persistent disk and starts with an empty database.
 
 Demo login:
@@ -52,4 +54,4 @@ Administrators can create and deactivate staff accounts from the Users menu. Sta
 
 This implementation is designed to be runnable immediately without an external package registry. Before using for real financial operations, change the default credentials and deploy behind HTTPS with a proper production process manager/reverse proxy. Product Master prices are final customer-facing unit prices; no tax is calculated or displayed. At invoice finalization, payment allocations must equal the discounted invoice total. Allocations can be recorded as received payment or marked Credit; Credit counts toward sales but is shown separately from money received as the invoice's outstanding amount. Credit is a payment method only; there is no separate credit-management module.
 
-Generated invoice PDFs are stored in the project `bills/` folder. Sales exports and backups are stored in `exports/`.
+Generated invoice PDFs are stored in the project `bills/` folder. Sales exports and backups are generated on demand and downloaded; they are not kept on the server. Backups do not include password hashes.

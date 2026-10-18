@@ -21,6 +21,15 @@ try:
     ):
         assert not server.staff_api_allowed(method,path), (method,path)
     conn=server.db()
+    backup=server.build_backup(conn)
+    assert backup['users'] and all('password_hash' not in user for user in backup['users'])
+    assert server.excel_safe('=HYPERLINK("http://x")') == '\'=HYPERLINK("http://x")' and server.excel_safe('Rohan') == 'Rohan' and server.excel_safe(5) == 5
+    assert server.clean_date('2026-10-01','Date') == '2026-10-01' and server.clean_date('','Date') is None
+    try:
+        server.clean_date('<img src=x>','Date'); raise AssertionError('Invalid date was accepted.')
+    except ValueError: pass
+    for _ in range(server.LOGIN_MAX_FAILURES): server.record_login_failure('smoke-user')
+    assert server.login_blocked('smoke-user') and not server.login_blocked('other-user')
     assert conn.execute('select count(*) from products').fetchone()[0] == 0
     assert conn.execute('select count(*) from invoices where status="FINALIZED"').fetchone()[0] == 0
     conn.execute('INSERT INTO held_bills(ref,customer_name,pricing_mode,items_json,created_at) VALUES(?,?,?,?,?)',('HOLD-SMOKE','Held Customer','STANDARD',server.encode_held_bill({'items':[{'product_id':1,'qty':2}],'discount':5.25,'customer_phone':'9876543210'}),server.now_iso()))
