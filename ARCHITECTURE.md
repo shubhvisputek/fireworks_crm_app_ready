@@ -102,6 +102,10 @@ pages/*.js        one module per screen; each calls registerPage({name, label, p
 
 There is no inline JavaScript anywhere: no `onclick=` and no inline `<script>`. That allows the Content-Security-Policy to use `script-src 'self'`, so even a missed escape cannot run an injected script. Combined with the escaping `html` tag, this closes off the stored-XSS bugs the old UI had.
 
+### Screen sizes
+
+Breakpoints (in `static/overrides.css`, the last section is the responsive layer): phones ≤ 560px, card tables ≤ 640px, large phones ≤ 760px, drawer navigation ≤ 1024px (also `isMobile()` in `ui/layout.js`), desktop above. Tables need no per-page work for phones: `ui/responsive.js` copies each column header into a `data-label` on its cells, and CSS shows those labels when rows become cards. The e2e suite opens every page at 320, 390, 768, 1024 and 1440px and fails if anything is wider than the screen.
+
 ### Charts
 
 `ui/charts.js` draws every chart as inline SVG or plain HTML, so there is no chart library and nothing breaks the CSP. The rules it follows:

@@ -72,6 +72,14 @@ Open `http://localhost:8000` and sign in as `admin` / `admin123`, then change th
 - **Audit log:** every change, who made it and when, with before/after details. Filter by date, user and area.
 - **Backups:** an automatic database backup every day (keeps the last 30 by default), **Backup now**, download, and **restore** from the list or from a file (a safety copy is taken first). Also JSON export, summary and detailed Excel, PDF sales report.
 
+## Screen sizes
+
+Every screen works from small phones (320px) through tablets to large desktops:
+
+- **Phones (up to 640px):** navigation opens from the ☰ button; the top bar keeps one row with icon buttons (🔑 password, ⏻ logout); tables turn into cards with each value labelled; dialogs slide up from the bottom; two headline numbers per row.
+- **Tablets (up to 1024px):** the same slide-out navigation, so pages use the full width; tables and two-column layouts as on desktop where they fit.
+- **Desktop:** fixed sidebar (can be collapsed with ☰), wider content up to 1600px on large screens.
+
 ## Tests
 
 ```bash

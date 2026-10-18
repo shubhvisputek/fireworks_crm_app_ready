@@ -2,6 +2,7 @@
 import { api, setUnauthorizedHandler } from './core/api.js';
 import { $, html, setHtml } from './core/html.js';
 import { formValues, installActionListeners, registerActions, setErrorReporter } from './core/actions.js';
+import { installResponsiveTables } from './ui/responsive.js';
 import { loadReferenceData, state } from './core/state.js';
 import { currentRoute, go, resolvePage, setRenderer } from './core/router.js';
 import { renderShell } from './ui/layout.js';
@@ -91,6 +92,7 @@ setUnauthorizedHandler(() => {
   }
 });
 installActionListeners();
+installResponsiveTables();
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/static/sw.js').catch(() => {});
 

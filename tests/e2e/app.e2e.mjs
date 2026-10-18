@@ -505,6 +505,40 @@ try {
     await page.waitForSelector('td:has-text("Rohan")');
   });
 
+  // Every screen at phone, tablet and desktop widths: nothing wider than the screen,
+  // drawer navigation below 1024px, tables as labelled cards on phones.
+  for (const [width, height] of [[320, 640], [390, 844], [768, 1024], [1024, 768], [1440, 900]]) {
+    await step(`responsive layout at ${width}px`, async () => {
+      const context = await browser.newContext({ viewport: { width, height } });
+      const small = await context.newPage();
+      watch(small, `${width}px`);
+      await login(small, server.url, 'admin', 'admin123');
+      await small.waitForSelector('.dashboard .tabs');
+      const pages = await small.$$eval('.nav button', (buttons) => buttons.map((b) => b.dataset.page));
+      for (const name of pages) {
+        await small.evaluate((n) => { location.hash = n; }, name);
+        await small.waitForFunction((n) => document.querySelector('.nav button.active')?.dataset.page === n, name);
+        await small.waitForTimeout(150);
+        const overflow = await small.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+        assert.ok(overflow <= 0, `${name} is ${overflow}px wider than a ${width}px screen`);
+      }
+      const sidebarOnScreen = await small.$eval('.sidebar', (el) => el.getBoundingClientRect().right > 0);
+      assert.equal(sidebarOnScreen, width > 1024, 'sidebar is a hidden drawer below 1024px');
+      if (width <= 1024) {
+        await small.click('.menu-toggle');
+        await small.waitForSelector('.mobile-menu-open .sidebar .nav button:has-text("Sales")');
+        await small.click('.sidebar .nav button:has-text("Sales")');
+        await small.waitForSelector('.topbar h1:has-text("Sales")');
+      } else {
+        await small.click('.nav button:has-text("Sales")');
+      }
+      await small.waitForSelector('tbody td[data-label="Customer"]');
+      const display = await small.$eval('.table thead', (el) => getComputedStyle(el).display);
+      assert.equal(display === 'none', width <= 640, 'tables show as cards only on phones');
+      await context.close();
+    });
+  }
+
   assert.deepEqual(problems, [], 'browser errors:\n' + problems.join('\n'));
   console.log('\nE2E PASSED');
 } catch (error) {
