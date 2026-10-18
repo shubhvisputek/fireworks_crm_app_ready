@@ -15,7 +15,7 @@ async function render() {
       html`<button class="${value === preset ? 'active' : ''}" data-action="analytics.preset" data-preset="${value}">${label}</button>`)}</div>
     <div class="small muted" style="margin:8px 0">${d.period.start} to ${d.period.end}</div>
     <div class="grid kpis">${kpi('Total Sales', money(k.sales))}${kpi('Bills', k.bills)}${kpi('Avg Bill', money(k.avg_bill))}
-      ${kpi('Gross Profit', money(k.gross_profit), `${num(k.gross_margin)}% margin • Net ${money(d.net_profit)} after expenses`)}</div><br>
+      ${'gross_profit' in k ? kpi('Gross Profit', money(k.gross_profit), `${num(k.gross_margin)}% margin • Net ${money(d.net_profit)} after expenses`) : ''}</div><br>
     <div class="card"><h3>Sales by hour</h3>${barChart(d.hourly.map((h) => ({ label: `${h.hr}:00`, value: h.sales })), 'No sales in this period.')}</div><br>
     <div class="grid two">
       <div class="card"><h3>Top 10 Products</h3>${table(['Product', 'Revenue', 'Qty'], d.top_products.slice(0, 10).map((x) =>

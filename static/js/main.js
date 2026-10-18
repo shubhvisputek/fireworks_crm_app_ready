@@ -12,14 +12,18 @@ import { errorBox } from './ui/widgets.js';
 import './pages/dashboard.js';
 import './pages/billing.js';
 import './pages/sales.js';
+import './pages/cash_closing.js';
+import './pages/dues.js';
 import './pages/products.js';
 import './pages/inventory.js';
+import './pages/suppliers.js';
 import './pages/customers.js';
 import './pages/expenses.js';
 import './pages/pricing.js';
 import './pages/analytics.js';
 import './pages/settings.js';
 import './pages/users.js';
+import './pages/audit.js';
 import './pages/backup.js';
 
 function renderLogin() {
@@ -47,8 +51,9 @@ async function renderPage() {
   }
 }
 
-async function startSession(user) {
+async function startSession(user, limits) {
   state.user = user;
+  if (limits) state.limits = limits;
   await loadReferenceData();
   await renderPage();
 }
@@ -57,7 +62,7 @@ registerActions({
   'nav.go': (el) => go(el.dataset.page),
   'auth.login': async (form) => {
     const result = await api.post('/api/login', formValues(form));
-    await startSession(result.user);
+    await startSession(result.user, result.limits);
   },
   'auth.logout': async () => {
     await api.post('/api/logout');
@@ -93,7 +98,7 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('/static/sw.j
 (async () => {
   try {
     const me = await api.get('/api/me');
-    if (me.authenticated) await startSession(me.user);
+    if (me.authenticated) await startSession(me.user, me.limits);
     else renderLogin();
   } catch (error) {
     setHtml($('#app'), errorBox(error));

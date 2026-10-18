@@ -7,7 +7,8 @@ from crm.services.base import Service
 TEXT_SETTINGS = ('business_name', 'address', 'gstin', 'license_number', 'phone', 'email', 'logo', 'state', 'state_code',
                  'invoice_prefix', 'invoice_footer', 'walk_in_name')
 BOOL_SETTINGS = ('negative_stock_allowed', 'batch_tracking')
-NUMBER_SETTINGS = ('default_gst_rate', 'default_cess_rate')
+NUMBER_SETTINGS = ('default_gst_rate', 'default_cess_rate', 'storage_limit_kg')
+RECEIPT_FORMATS = ('A4', '80MM')
 TARGET_FIELDS = ('daily', 'weekly', 'monthly', 'seasonal')
 
 
@@ -39,6 +40,16 @@ class SettingsService(Service):
         for key in NUMBER_SETTINGS:
             if key in incoming:
                 merged[key] = v.amount(incoming[key], key.replace('_', ' ').capitalize(), default=0.0)
+        if 'max_discount_pct' in incoming:
+            pct = v.amount(incoming['max_discount_pct'], 'Maximum discount without approval', default=0.0)
+            if pct > 100:
+                raise ValidationError('Maximum discount without approval cannot be more than 100%.')
+            merged['max_discount_pct'] = pct
+        if 'receipt_format' in incoming:
+            merged['receipt_format'] = '80mm' if v.one_of(incoming['receipt_format'], RECEIPT_FORMATS, 'Receipt format') == '80MM' else 'A4'
+        if 'backup_keep_days' in incoming:
+            days = int(v.amount(incoming['backup_keep_days'], 'Backups to keep', minimum=3, default=30))
+            merged['backup_keep_days'] = min(days, 365)
         if not merged['business_name']:
             raise ValidationError('Business name is required.')
         current_targets = self.get_targets()

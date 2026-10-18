@@ -33,20 +33,21 @@ class ReportService(Service):
             return f'{today.year}-10-01', f'{today.year}-10-31'
         return today.isoformat(), today.isoformat()
 
-    def dashboard(self, day=None):
+    def dashboard(self, actor, day=None):
         day = v.iso_date(day, 'Date') or self.today()
         date = dt.date.fromisoformat(day)
         yesterday = (date - dt.timedelta(days=1)).isoformat()
         last_week = (date - dt.timedelta(days=7)).isoformat()
         low_count, attention = self.repos.reports.low_stock(limit=10)
-        return {
+        return self.visible(actor, {
             'today': self.sales_kpis(day, day), 'yesterday': self.sales_kpis(yesterday, yesterday),
             'last_week': self.sales_kpis(last_week, last_week), 'expenses': self.services.expenses.total(day, day),
             'low_stock': low_count, 'inventory_cost': money(self.repos.reports.inventory_cost()),
             'target': self.services.settings.get_targets().get('daily'), 'attention': attention,
-        }
+            'storage': self.services.inventory.storage_status(),
+        })
 
-    def analytics(self, start=None, end=None, preset=None):
+    def analytics(self, actor, start=None, end=None, preset=None):
         if preset:
             start, end = self.resolve_preset(preset)
         start = v.iso_date(start, 'Start date') or self.today()
@@ -54,16 +55,16 @@ class ReportService(Service):
         kpi = self.sales_kpis(start, end)
         expenses = self.services.expenses.total(start, end)
         slow = self.repos.reports.slow_movers(start, end)
-        return {
+        return self.visible(actor, {
             'period': {'start': start, 'end': end}, 'kpi': kpi, 'expenses': expenses, 'net_profit': money(kpi['gross_profit'] - expenses),
             'hourly': self.repos.reports.hourly(start, end), 'top_products': self.repos.reports.top_products(start, end),
             'categories': self.repos.reports.categories(start, end), 'payments': self.repos.reports.payment_mix(start, end),
             'customers': self.repos.reports.customer_mix(start, end), 'slow_movers': slow, 'bottom_products': slow[:10],
             'discounts': self.repos.reports.discounts(start, end), 'target': self.services.settings.get_targets(),
-        }
+        })
 
-    def backup(self):
-        data = self.repos.backup.dump()
+    def backup(self, actor):
+        data = self.visible(actor, self.repos.backup.dump())
         # Staff can download backups, so credentials never leave the server.
         for user in data.get('users', []):
             user.pop('password_hash', None)

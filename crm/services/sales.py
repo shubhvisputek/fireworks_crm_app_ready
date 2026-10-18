@@ -4,6 +4,7 @@ from collections import defaultdict
 
 from crm.domain import validation as v
 from crm.domain.money import allocate_discount, amounts_equal, money
+from crm.domain.permissions import Permission as P
 from crm.errors import NotFoundError, ValidationError
 from crm.services.base import Service
 
@@ -13,17 +14,24 @@ INVOICE_STATUSES = ('FINALIZED', 'VOID')
 
 class SalesService(Service):
     # --- queries ------------------------------------------------------------
-    def list_invoices(self, start=None, end=None, status='FINALIZED'):
+    def list_invoices(self, actor, start=None, end=None, status='FINALIZED'):
         start = v.iso_date(start, 'Start date') or self.today()
         end = v.iso_date(end, 'End date') or self.today()
         status = v.one_of(status, INVOICE_STATUSES, 'Status', default='FINALIZED')
-        return self.repos.invoices.list(start, end, status)
+        own_only = None if self.can(actor, P.SALES_VIEW) else actor['id']
+        return self.repos.invoices.list(start, end, status, user_id=own_only)
 
-    def invoice_detail(self, invoice_id):
+    def visible_invoice(self, actor, invoice_id):
+        """The invoice if this user may see it: everyone's with 'See all bills', otherwise only bills they made."""
         invoice = self.repos.invoices.get(invoice_id)
-        if not invoice:
+        if not invoice or (not self.can(actor, P.SALES_VIEW) and invoice['user_id'] != actor['id']):
             raise NotFoundError('Invoice not found')
-        return {'invoice': invoice, 'items': self.repos.invoices.items(invoice_id), 'payments': self.repos.invoices.payments(invoice_id)}
+        return invoice
+
+    def invoice_detail(self, actor, invoice_id):
+        invoice = self.visible_invoice(actor, invoice_id)
+        return self.visible(actor, {'invoice': invoice, 'items': self.repos.invoices.items(invoice_id),
+                                    'payments': self.repos.invoices.payments(invoice_id)})
 
     # --- creating bills ---------------------------------------------------------
     def _invoice_number(self):
@@ -85,6 +93,7 @@ class SalesService(Service):
                 raise ValidationError('Discount must be a valid amount.')
             if discount < 0 or discount > subtotal:
                 raise ValidationError('Discount must be between 0 and the subtotal.')
+            approved_by = self._discount_approval(actor, discount, subtotal, data.get('approval'))
             for line, share in zip(lines, allocate_discount(discount, [line['gross'] for line in lines])):
                 line['discount'] = share
                 line['net'] = money(line['gross'] - share)
@@ -101,6 +110,7 @@ class SalesService(Service):
                 'status': 'FINALIZED', 'pricing_mode': 'STANDARD', 'subtotal': subtotal, 'discount': discount,
                 'taxable_amount': total, 'grand_total': total, 'amount_received': received, 'outstanding': outstanding,
                 'user_id': billed_by or actor['id'], 'notes': v.optional_text(data.get('notes'), 1000), 'created_at': now, 'finalized_at': now,
+                'discount_approved_by': approved_by,
             })
             for line in lines:
                 product = line['product']
@@ -117,8 +127,40 @@ class SalesService(Service):
             for payment in payments:
                 self.repos.invoices.add_payment({'invoice_id': invoice_id, 'customer_id': customer['id'] if customer else None,
                                                  'payment_date': self.today(), 'user_id': actor['id'], 'created_at': now, **payment})
-            self.audit(actor, 'Invoice finalized', 'INVOICE', invoice_id, new={'invoice_number': number, 'total': total})
+            self.audit(actor, 'Invoice finalized', 'INVOICE', invoice_id,
+                       new={'invoice_number': number, 'total': total, 'discount': discount, 'discount_approved_by': approved_by})
         return invoice_id, number
+
+    def _discount_approval(self, actor, discount, subtotal, approval):
+        """Discounts above the shop limit need someone with 'Give or approve any discount'.
+
+        Returns the approver's user id when an approval was needed, otherwise None.
+        """
+        limit = v.number(self.services.settings.get_settings().get('max_discount_pct'), 100)
+        if not discount or not subtotal or discount / subtotal * 100 <= limit + 1e-9 or self.can(actor, P.DISCOUNT_APPROVE):
+            return None
+        approval = approval if isinstance(approval, dict) else {}
+        if not approval.get('username'):
+            raise ValidationError(f'Discounts above {limit:g}% need approval from a manager.', code='DISCOUNT_APPROVAL_REQUIRED',
+                                  max_discount_pct=limit)
+        approver = self.services.auth.verify_credentials(approval.get('username'), approval.get('password'), purpose='discount')
+        if not self.can(approver, P.DISCOUNT_APPROVE):
+            raise ValidationError(f"{approver['username']} is not allowed to approve discounts.", code='DISCOUNT_APPROVAL_REQUIRED',
+                                  max_discount_pct=limit)
+        return approver['id']
+
+    # --- credit dues --------------------------------------------------------
+    def dues(self):
+        """Outstanding credit grouped by customer, largest first."""
+        customers = {}
+        for bill in self.repos.reports.dues():
+            key = bill['customer_id'] or f"walk-in:{bill['customer_name_snapshot']}"
+            entry = customers.setdefault(key, {'customer_id': bill['customer_id'], 'name': bill['customer_name_snapshot'],
+                                               'phone': bill['customer_phone'], 'total_due': 0.0, 'oldest': bill['invoice_date'], 'bills': []})
+            entry['total_due'] = money(entry['total_due'] + bill['outstanding'])
+            entry['bills'].append(bill)
+        rows = sorted(customers.values(), key=lambda c: -c['total_due'])
+        return {'customers': rows, 'total_due': money(sum(c['total_due'] for c in rows))}
 
     # --- changing bills ---------------------------------------------------------
     def void(self, actor, invoice_id):

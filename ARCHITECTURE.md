@@ -51,7 +51,29 @@ exports/        PDF and Excel rendering (pure functions: rows in, bytes out)
 router.add('POST', '/api/invoices/{invoice_id}/edit', edit, P.SALES_MANAGE)
 ```
 
-`/api/me` returns the user's permission list, and the browser builds its navigation from it. Adding a role such as *Manager* or *Cashier* means adding one entry to `ROLE_PERMISSIONS`. No routes or pages change.
+A route can also require *any one of* several permissions, e.g. `(P.SALES_VIEW, P.SALES_VIEW_OWN)`; the service then decides how much the user sees.
+
+`/api/me` returns the user's effective permission list, and the browser builds its navigation from it.
+
+| Role | Highlights |
+|---|---|
+| Owner | Everything; role and permissions cannot be changed |
+| Manager | Billing, all bills, edit/void/returns, discount approval, products, stock, purchases, suppliers, dues, expenses, reports, all cash closings. No profit, prices, settings, users or backups |
+| Cashier | Billing, own bills/held bills/expenses only, customers (view), own cash closing |
+| Stock keeper | Products, stock adjustments, purchases, suppliers, reorder plan |
+| Accountant | Analytics with profit, all bills (read), collect credit, dues, expenses, reports, supplier payments, all cash closings |
+| Staff (legacy) | Exactly the access staff had before roles existed |
+
+Effective permissions are the role preset unless the Owner customised that user (`users.permissions_json`). Changing a user's role or permissions bumps their session version, which signs them out everywhere.
+
+**Data rules enforced in services, not just routes:**
+- Without *See all bills*, invoice lists, details and PDFs are limited to bills the user made (`SalesService.visible_invoice`).
+- Held bills and expenses are limited to the user's own unless they have the wider permission.
+- `Service.visible()` strips cost and profit fields (`domain/visibility.py`) from dashboards, analytics, product details, purchases, the reorder plan and the JSON backup for users without *See cost, profit and margins*. The detailed Excel export drops its cost columns too.
+- Big discounts are checked in `SalesService._discount_approval`; approver passwords are throttled like logins.
+- The licence storage limit is checked in `InventoryService.check_storage` for purchases, positive adjustments, opening stock and imports. Confirmed overrides are audited.
+
+**Backups** (`crm/backups.py`): `BackupManager` takes consistent snapshots with SQLite's online backup API. `DailyBackupThread` checks hourly and keeps the configured number of daily backups. A restore validates the file (integrity check and required tables), takes a `-prerestore` safety copy, then copies the backup into the live database.
 
 ### Data and migrations
 

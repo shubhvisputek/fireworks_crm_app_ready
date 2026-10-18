@@ -9,16 +9,25 @@ def create_sale(ctx):
 
 def list_invoices(ctx):
     q = ctx.request.query
-    return ctx.services.sales.list_invoices(q.get('start'), q.get('end'), q.get('status', 'FINALIZED'))
+    return ctx.services.sales.list_invoices(ctx.user, q.get('start'), q.get('end'), q.get('status', 'FINALIZED'))
 
 
 def invoice_detail(ctx):
-    return ctx.services.sales.invoice_detail(ctx.params['invoice_id'])
+    return ctx.services.sales.invoice_detail(ctx.user, ctx.params['invoice_id'])
 
 
 def invoice_pdf(ctx):
-    filename, content = ctx.services.exports.invoice_pdf(ctx.params['invoice_id'])
+    filename, content = ctx.services.exports.invoice_pdf(ctx.user, ctx.params['invoice_id'])
     return Response.download(filename, content, 'application/pdf', inline=True)
+
+
+def invoice_receipt(ctx):
+    filename, content = ctx.services.exports.invoice_pdf(ctx.user, ctx.params['invoice_id'], receipt=True)
+    return Response.download(filename, content, 'application/pdf', inline=True)
+
+
+def dues(ctx):
+    return ctx.services.sales.dues()
 
 
 def void(ctx):
@@ -43,11 +52,11 @@ def hold(ctx):
 
 
 def list_held(ctx):
-    return ctx.services.held_bills.list()
+    return ctx.services.held_bills.list(ctx.user)
 
 
 def peek_held(ctx):
-    return ctx.services.held_bills.peek(ctx.params['held_id'])
+    return ctx.services.held_bills.peek(ctx.user, ctx.params['held_id'])
 
 
 def resume_held(ctx):
@@ -61,13 +70,15 @@ def delete_held(ctx):
 
 def register(router):
     router.add('POST', '/api/sales', create_sale, P.BILLING_CREATE)
-    router.add('GET', '/api/invoices', list_invoices, P.SALES_VIEW)
-    router.add('GET', '/api/invoices/{invoice_id}', invoice_detail, P.SALES_VIEW)
+    router.add('GET', '/api/invoices', list_invoices, (P.SALES_VIEW, P.SALES_VIEW_OWN))
+    router.add('GET', '/api/invoices/{invoice_id}', invoice_detail, (P.SALES_VIEW, P.SALES_VIEW_OWN))
     router.add('GET', '/api/invoice-pdf/{invoice_id}', invoice_pdf, P.INVOICE_PRINT)
-    router.add('POST', '/api/invoices/{invoice_id}/void', void, P.SALES_MANAGE)
-    router.add('POST', '/api/invoices/{invoice_id}/edit', edit, P.SALES_MANAGE)
-    router.add('POST', '/api/returns', record_return, P.SALES_MANAGE)
-    router.add('POST', '/api/payments', collect_payment, P.SALES_MANAGE)
+    router.add('GET', '/api/invoice-receipt/{invoice_id}', invoice_receipt, P.INVOICE_PRINT)
+    router.add('GET', '/api/dues', dues, P.DUES_VIEW)
+    router.add('POST', '/api/invoices/{invoice_id}/void', void, P.SALES_VOID)
+    router.add('POST', '/api/invoices/{invoice_id}/edit', edit, P.SALES_EDIT)
+    router.add('POST', '/api/returns', record_return, P.RETURNS_CREATE)
+    router.add('POST', '/api/payments', collect_payment, P.PAYMENTS_COLLECT)
     router.add('GET', '/api/held-bills', list_held, P.HELD_BILLS_USE)
     router.add('POST', '/api/held-bills', hold, P.HELD_BILLS_USE)
     router.add('GET', '/api/held-bills/resume/{held_id}', peek_held, P.HELD_BILLS_USE)

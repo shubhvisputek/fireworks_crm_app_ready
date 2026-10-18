@@ -7,16 +7,16 @@ XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
 
 def dashboard(ctx):
-    return ctx.services.reports.dashboard(ctx.request.arg('date'))
+    return ctx.services.reports.dashboard(ctx.user, ctx.request.arg('date'))
 
 
 def analytics(ctx):
     q = ctx.request.query
-    return ctx.services.reports.analytics(q.get('start'), q.get('end'), q.get('preset'))
+    return ctx.services.reports.analytics(ctx.user, q.get('start'), q.get('end'), q.get('preset'))
 
 
 def backup(ctx):
-    filename, data = ctx.services.exports.backup_json()
+    filename, data = ctx.services.exports.backup_json(ctx.user)
     return Response.download(filename, json.dumps(data, indent=2, default=str).encode(), 'application/json')
 
 
@@ -25,7 +25,7 @@ def sales_xlsx(ctx):
 
 
 def sales_detailed_xlsx(ctx):
-    return Response.download(*ctx.services.exports.sales_detailed_xlsx(), XLSX)
+    return Response.download(*ctx.services.exports.sales_detailed_xlsx(ctx.user), XLSX)
 
 
 def sales_pdf(ctx):

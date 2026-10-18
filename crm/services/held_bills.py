@@ -4,6 +4,7 @@ import secrets
 
 from crm.domain import validation as v
 from crm.domain.money import money
+from crm.domain.permissions import Permission as P
 from crm.errors import NotFoundError, ValidationError
 from crm.services.base import Service
 
@@ -42,22 +43,28 @@ class HeldBillService(Service):
             })
         return {'id': held_id, 'ref': ref}
 
-    def list(self):
-        return [present(row) for row in self.repos.held_bills.list()]
+    def _sees_all(self, actor):
+        return self.can(actor, P.HELD_BILLS_DELETE)
 
-    def peek(self, held_id):
+    def _get(self, actor, held_id):
         row = self.repos.held_bills.get(held_id)
-        if not row:
+        if not row or (not self._sees_all(actor) and row['user_id'] != actor['id']):
             raise NotFoundError('Held bill not found.')
+        return row
+
+    def list(self, actor):
+        rows = self.repos.held_bills.list(user_id=None if self._sees_all(actor) else actor['id'])
+        return [present(row) for row in rows]
+
+    def peek(self, actor, held_id):
+        row = self._get(actor, held_id)
         held = decode(row['items_json'])
         return {'ok': True, 'bill': row, **held}
 
     def resume(self, actor, held_id):
         """Take a held bill back to the counter; it is removed from the held list."""
         with self.transaction():
-            row = self.repos.held_bills.get(held_id)
-            if not row:
-                raise NotFoundError('Held bill not found.')
+            row = self._get(actor, held_id)
             self.repos.held_bills.delete(held_id)
             self.audit(actor, 'Held bill resumed', 'HELD_BILL', held_id)
         return {'ok': True, 'bill': row, **decode(row['items_json'])}

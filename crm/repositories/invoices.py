@@ -2,12 +2,14 @@ from crm.repositories.base import Repository
 
 # Invoice with the names of the people who billed, edited or voided it, and its revision links.
 INVOICE_SELECT = '''
-SELECT i.*, ub.username AS billed_by_name, ue.username AS edited_by_name, uv.username AS voided_by_name,
+SELECT i.*, COALESCE(ub.display_name, ub.username) AS billed_by_name, COALESCE(ue.display_name, ue.username) AS edited_by_name,
+       COALESCE(uv.display_name, uv.username) AS voided_by_name, COALESCE(ua.display_name, ua.username) AS discount_approved_by_name,
        rf.invoice_number AS revised_from_number, rt.invoice_number AS revised_to_number, c.phone AS customer_phone
 FROM invoices i
 LEFT JOIN users ub ON ub.id=i.user_id
 LEFT JOIN users ue ON ue.id=i.edited_by
 LEFT JOIN users uv ON uv.id=i.voided_by
+LEFT JOIN users ua ON ua.id=i.discount_approved_by
 LEFT JOIN invoices rf ON rf.id=i.revised_from_id
 LEFT JOIN invoices rt ON rt.id=i.revised_to_id
 LEFT JOIN customers c ON c.id=i.customer_id
@@ -16,9 +18,10 @@ LEFT JOIN customers c ON c.id=i.customer_id
 
 class InvoiceRepository(Repository):
     # --- invoices ---------------------------------------------------------
-    def list(self, start, end, status='FINALIZED', limit=500):
-        return self.all(INVOICE_SELECT + ' WHERE i.invoice_date BETWEEN ? AND ? AND i.status=? ORDER BY i.id DESC LIMIT ?',
-                        (start, end, status, limit))
+    def list(self, start, end, status='FINALIZED', limit=500, user_id=None):
+        own = ' AND i.user_id=?' if user_id else ''
+        params = (start, end, status) + ((user_id,) if user_id else ()) + (limit,)
+        return self.all(INVOICE_SELECT + f' WHERE i.invoice_date BETWEEN ? AND ? AND i.status=?{own} ORDER BY i.id DESC LIMIT ?', params)
 
     def list_finalized(self):
         return self.all(INVOICE_SELECT + " WHERE i.status='FINALIZED' ORDER BY i.invoice_date, i.id")

@@ -3,6 +3,7 @@ import logging
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from crm.backups import DailyBackupThread
 from crm.config import Config
 from crm.web.app import SECURITY_HEADERS, Application
 from crm.web.http import Request
@@ -57,6 +58,8 @@ def main():
         app.initialize()
     except RuntimeError as error:
         raise SystemExit(str(error))
+    if config.auto_backup:
+        DailyBackupThread(app.backups, app.backup_keep_days).start()
     shown = 'localhost' if not config.is_network_exposed else config.host
     print(f'Fireworks CRM running at http://{shown}:{config.port}', flush=True)
     print('Login username: admin; password is configured through FIREWORKS_ADMIN_PASSWORD.' if config.admin_password

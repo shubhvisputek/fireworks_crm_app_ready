@@ -6,6 +6,7 @@ import re
 import urllib.parse
 from dataclasses import dataclass, field
 
+from crm.backups import BackupManager
 from crm.clock import Clock
 from crm.config import Config
 from crm.db import Database, migrate
@@ -58,13 +59,14 @@ class Application:
         self.db = Database(config.db_path)
         self.signer = TokenSigner(SecretStore(config.secret_path))
         self.throttle = LoginThrottle(config.login_max_failures, config.login_window_seconds)
+        self.backups = BackupManager(config.db_path, config.backup_dir, self.clock)
         self.router = Router()
         from crm.web.routes import register_all
         register_all(self.router)
 
     # --- lifecycle --------------------------------------------------------
     def services(self, conn):
-        return Services(conn, self.clock, self.config, self.throttle)
+        return Services(conn, self.clock, self.config, self.throttle, self.backups)
 
     def initialize(self):
         """Create directories and schema, the first admin, and optional demo data."""
@@ -78,6 +80,10 @@ class Application:
                                    'change the password in Settings, then start it on the network again.')
             if self.config.seed_demo:
                 services.demo.seed()
+
+    def backup_keep_days(self):
+        with self.db.session() as conn:
+            return self.services(conn).settings.get_settings().get('backup_keep_days', 30)
 
     # --- sessions ---------------------------------------------------------
     def session_cookie(self, value, max_age=None):
@@ -110,13 +116,16 @@ class Application:
         route, params = self.router.match(request.method, request.path)
         if route is None:
             return Response.error('Use ' + '/'.join(sorted(params)), 405) if params else Response.error('Not found', 404)
+        if route.max_body:
+            request.max_body = route.max_body
         with self.db.session() as conn:
             ctx = RequestContext(request, self.services(conn), self, params=params)
             if route.permission != PUBLIC:
                 ctx.user = ctx.services.auth.user_for_session(self.session_payload(request))
                 if not ctx.user:
                     return Response.error('Authentication required', 401)
-                if route.permission != AUTHENTICATED and not has_permission(ctx.user, route.permission):
+                needed = route.permission if isinstance(route.permission, tuple) else (route.permission,)
+                if route.permission != AUTHENTICATED and not any(has_permission(ctx.user, p) for p in needed):
                     return Response.error('This account does not have access to that feature.', 403)
             result = route.handler(ctx)
         response = result if isinstance(result, Response) else Response.json(result)

@@ -1,32 +1,102 @@
-"""Staff account management."""
+"""User accounts, roles and per-user permissions."""
+import json
 import re
 
 from crm.domain import validation as v
-from crm.domain.permissions import OWNER, STAFF
+from crm.domain.permissions import (ASSIGNABLE_ROLES, OWNER, PERMISSION_LABELS, ROLE_LABELS, ROLE_PERMISSIONS, Permission,
+                                    effective_permissions, parse_permission_list)
 from crm.errors import NotFoundError, ValidationError
 from crm.security import hash_password
-from crm.services.auth import MIN_PASSWORD_LENGTH
+from crm.services.auth import MIN_PASSWORD_LENGTH, public_user
 from crm.services.base import Service
 
 USERNAME_RE = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{2,31}')
 
 
-class UserService(Service):
-    def list(self):
-        return self.repos.users.list_public()
+def _password(value, field='Password'):
+    if not isinstance(value, str) or len(value) < MIN_PASSWORD_LENGTH:
+        raise ValidationError(f'{field} must be at least {MIN_PASSWORD_LENGTH} characters.')
+    return value
 
-    def create_staff(self, actor, username, password):
-        username = v.text(username, 64)
+
+class UserService(Service):
+    def catalog(self):
+        """Roles and permissions, for the user-management screen."""
+        return {
+            'roles': [{'role': role, 'label': ROLE_LABELS[role], 'permissions': sorted(p.value for p in ROLE_PERMISSIONS[role])}
+                      for role in (OWNER, *ASSIGNABLE_ROLES)],
+            'assignable_roles': list(ASSIGNABLE_ROLES),
+            'permissions': [{'permission': p.value, 'label': PERMISSION_LABELS[p]} for p in Permission],
+        }
+
+    def list(self):
+        return [public_user(user) for user in self.repos.users.list_public()]
+
+    def _role(self, value):
+        role = v.text(value, 20).upper()
+        if role not in ASSIGNABLE_ROLES:
+            raise ValidationError('Choose a valid role.')
+        return role
+
+    def _permissions_json(self, role, permissions):
+        """None means 'use the role preset'; otherwise store the chosen set if it differs from the preset."""
+        if permissions is None:
+            return None
+        if not isinstance(permissions, list):
+            raise ValidationError('Permissions must be a list.')
+        chosen = parse_permission_list(permissions)
+        if chosen == ROLE_PERMISSIONS[role]:
+            return None
+        return json.dumps(sorted(p.value for p in chosen))
+
+    def create(self, actor, data):
+        username = v.text(data.get('username'), 64)
         if not USERNAME_RE.fullmatch(username):
             raise ValidationError('Username must be 3–32 characters and use only letters, numbers, dots, dashes, or underscores.')
-        if not isinstance(password, str) or len(password) < MIN_PASSWORD_LENGTH:
-            raise ValidationError(f'Password must be at least {MIN_PASSWORD_LENGTH} characters.')
+        password = _password(data.get('password'))
+        role = self._role(data.get('role') or 'CASHIER')
+        display_name = v.optional_text(data.get('display_name'), 60)
+        permissions_json = self._permissions_json(role, data.get('permissions'))
         with self.transaction():
             if self.repos.users.username_exists(username):
                 raise ValidationError('That username is already in use.')
-            user_id = self.repos.users.create(username, hash_password(password), STAFF, self.now())
-            self.audit(actor, 'Staff user created', 'USER', user_id, new={'username': username, 'role': STAFF})
+            user_id = self.repos.users.create(username, hash_password(password), role, self.now(), display_name, permissions_json)
+            self.audit(actor, 'User created', 'USER', user_id, new={'username': username, 'role': role, 'display_name': display_name,
+                                                                    'permissions': permissions_json})
         return user_id
+
+    def update(self, actor, user_id, data):
+        """Change a user's display name, role and permissions. Owners can only change their display name."""
+        with self.transaction():
+            target = self.repos.users.get(user_id)
+            if not target:
+                raise NotFoundError('User not found.')
+            display_name = v.optional_text(data.get('display_name', target['display_name']), 60)
+            if target['role'] == OWNER:
+                if 'role' in data and str(data['role']).upper() != OWNER or data.get('permissions') is not None:
+                    raise ValidationError("The owner's role and permissions cannot be changed.")
+                self.repos.users.set_display_name(user_id, display_name)
+            else:
+                role = self._role(data.get('role', target['role']))
+                permissions_json = self._permissions_json(role, data.get('permissions')) if 'permissions' in data else (
+                    target['permissions_json'] if role == target['role'] else None)
+                self.repos.users.update_profile(user_id, role, display_name, permissions_json)
+            updated = self.repos.users.get(user_id)
+            self.audit(actor, 'User updated', 'USER', user_id,
+                       previous={'role': target['role'], 'display_name': target['display_name'], 'permissions': sorted(p.value for p in effective_permissions(target))},
+                       new={'role': updated['role'], 'display_name': updated['display_name'], 'permissions': sorted(p.value for p in effective_permissions(updated))})
+        return public_user(updated)
+
+    def reset_password(self, actor, user_id, password):
+        password = _password(password, 'New password')
+        with self.transaction():
+            target = self.repos.users.get(user_id)
+            if not target:
+                raise NotFoundError('User not found.')
+            if target['id'] == actor['id']:
+                raise ValidationError('Use the Password button to change your own password.')
+            self.repos.users.set_password(user_id, hash_password(password))
+            self.audit(actor, 'Password reset', 'USER', user_id, new={'username': target['username']})
 
     def set_active(self, actor, user_id, payload):
         if 'active' not in payload:

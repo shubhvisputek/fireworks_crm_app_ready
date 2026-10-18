@@ -1,8 +1,8 @@
 from crm.repositories.customers import CustomerRepository
 from crm.repositories.inventory import InventoryRepository
 from crm.repositories.invoices import InvoiceRepository
-from crm.repositories.misc import (AuditRepository, BackupRepository, ExpenseRepository, HeldBillRepository,
-                                   PurchaseRepository, SequenceRepository, SettingsRepository)
+from crm.repositories.misc import (AuditQueryRepository, AuditRepository, BackupRepository, CashClosingRepository, ExpenseRepository,
+                                   HeldBillRepository, PurchaseRepository, SequenceRepository, SettingsRepository, SupplierRepository)
 from crm.repositories.products import ProductRepository
 from crm.repositories.reports import ReportRepository
 from crm.repositories.users import UserRepository
@@ -26,3 +26,6 @@ class Repositories:
         self.sequences = SequenceRepository(conn)
         self.reports = ReportRepository(conn)
         self.backup = BackupRepository(conn)
+        self.suppliers = SupplierRepository(conn)
+        self.cash_closings = CashClosingRepository(conn)
+        self.audit_log = AuditQueryRepository(conn)

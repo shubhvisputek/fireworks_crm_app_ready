@@ -165,13 +165,34 @@ def _m4_indexes(conn):
     conn.execute('CREATE INDEX IF NOT EXISTS idx_return_items_item ON return_items(invoice_item_id)')
 
 
-MIGRATIONS = [(1, _m1_product_prices), (2, _m2_session_versions), (3, _m3_invoice_revisions), (4, _m4_indexes)]
+def _m5_roles_and_operations(conn):
+    """Per-user permissions, discount approval, licence storage limits, supplier payments, cash closings."""
+    _add_missing_columns(conn, 'users', {'display_name': 'TEXT', 'permissions_json': 'TEXT'})
+    _add_missing_columns(conn, 'invoices', {'discount_approved_by': 'INTEGER'})
+    _add_missing_columns(conn, 'products', {'explosive_kg': 'REAL NOT NULL DEFAULT 0'})
+    conn.execute('''CREATE TABLE IF NOT EXISTS supplier_payments (
+        id INTEGER PRIMARY KEY, supplier_id INTEGER NOT NULL REFERENCES suppliers(id), payment_date TEXT NOT NULL,
+        mode TEXT NOT NULL, amount REAL NOT NULL, reference TEXT, notes TEXT, user_id INTEGER, created_at TEXT NOT NULL)''')
+    conn.execute('''CREATE TABLE IF NOT EXISTS cash_closings (
+        id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), business_date TEXT NOT NULL,
+        period_start TEXT NOT NULL, closed_at TEXT NOT NULL, expected_json TEXT NOT NULL, counted_json TEXT NOT NULL,
+        expected_cash REAL NOT NULL, counted_cash REAL NOT NULL, difference REAL NOT NULL,
+        bills INTEGER NOT NULL DEFAULT 0, notes TEXT)''')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_payments_user_time ON payments(user_id, created_at)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_logs(created_at)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_purchases_supplier ON purchases(supplier_id)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode)')
+
+
+MIGRATIONS = [(1, _m1_product_prices), (2, _m2_session_versions), (3, _m3_invoice_revisions), (4, _m4_indexes),
+              (5, _m5_roles_and_operations)]
 
 DEFAULT_SETTINGS = {
     'business_name': 'Shree Ganesh Fireworks', 'address': 'Pune, Maharashtra, India', 'gstin': '', 'license_number': '',
     'phone': '', 'email': '', 'logo': '', 'state': 'Maharashtra', 'state_code': '27', 'invoice_prefix': 'FW',
     'negative_stock_allowed': False, 'batch_tracking': True, 'default_gst_rate': 0, 'default_cess_rate': 0,
     'invoice_footer': 'Thank you for shopping with us.', 'walk_in_name': 'Walk-in Customer',
+    'max_discount_pct': 10, 'storage_limit_kg': 0, 'receipt_format': 'A4', 'backup_keep_days': 30,
 }
 
 

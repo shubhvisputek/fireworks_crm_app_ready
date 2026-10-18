@@ -2,7 +2,9 @@
 from functools import cached_property
 
 from crm.repositories import Repositories
+from crm.services.audit_log import AuditLogService
 from crm.services.auth import AuthService
+from crm.services.cash_closing import CashClosingService
 from crm.services.catalog import CatalogService
 from crm.services.customers import CustomerService
 from crm.services.demo import DemoService
@@ -14,15 +16,17 @@ from crm.services.product_import import ProductImportService
 from crm.services.reports import ReportService
 from crm.services.sales import SalesService
 from crm.services.settings import SettingsService
+from crm.services.suppliers import SupplierService
 from crm.services.users import UserService
 
 
 class Services:
-    def __init__(self, conn, clock, config, throttle):
+    def __init__(self, conn, clock, config, throttle, backups=None):
         self.repos = Repositories(conn)
         self.clock = clock
         self.config = config
         self.throttle = throttle
+        self.backups = backups  # BackupManager (file snapshots); shared by the whole application
 
     def _make(self, cls, **extra):
         return cls(self.repos, self.clock, self.config, services=self, **extra)
@@ -78,3 +82,15 @@ class Services:
     @cached_property
     def demo(self):
         return self._make(DemoService)
+
+    @cached_property
+    def suppliers(self):
+        return self._make(SupplierService)
+
+    @cached_property
+    def cash_closing(self):
+        return self._make(CashClosingService)
+
+    @cached_property
+    def audit_log(self):
+        return self._make(AuditLogService)

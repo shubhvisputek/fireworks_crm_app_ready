@@ -2,6 +2,7 @@ import { api } from '../core/api.js';
 import { $, html, setHtml } from '../core/html.js';
 import { formValues, registerActions } from '../core/actions.js';
 import { money, todayISO, yearStartISO } from '../core/format.js';
+import { can } from '../core/state.js';
 import { registerPage } from '../core/router.js';
 import { closeModal, formModal, toast } from '../ui/feedback.js';
 import { barChart, kpi, table } from '../ui/widgets.js';
@@ -14,7 +15,8 @@ async function render() {
   const byDay = {};
   rows.forEach((x) => (byDay[x.expense_date] = (byDay[x.expense_date] || 0) + Number(x.amount || 0)));
   const days = Object.entries(byDay).sort(([a], [b]) => a.localeCompare(b)).map(([day, value]) => ({ label: day.slice(5), value }));
-  setHtml($('#page'), html`<div class="grid kpis">${kpi('Expenses this year', money(total))}${kpi('Entries', rows.length)}</div><br>
+  const label = can('expenses.view') ? 'Expenses this year' : 'My expenses this year';
+  setHtml($('#page'), html`<div class="grid kpis">${kpi(label, money(total))}${kpi('Entries', rows.length)}</div><br>
     <div class="row"><button class="button primary" data-action="expenses.add">+ Add Expense</button>
       <button class="button" data-action="expenses.addRecurring">+ Recurring</button></div><br>
     <div class="card"><h3>Day-wise Expenses</h3>${barChart(days, 'No expenses recorded.')}</div><br>
@@ -52,4 +54,4 @@ registerActions({
   },
 });
 
-registerPage({ name: 'expenses', label: 'Expenses', permission: 'expenses.view', render });
+registerPage({ name: 'expenses', label: 'Expenses', permission: ['expenses.view', 'expenses.create'], render });

@@ -8,7 +8,7 @@ def list_products(ctx):
 
 
 def product_detail(ctx):
-    return ctx.services.catalog.product_detail(ctx.params['product_id'])
+    return ctx.services.catalog.product_detail(ctx.user, ctx.params['product_id'])
 
 
 def categories(ctx):
@@ -17,6 +17,11 @@ def categories(ctx):
 
 def create_product(ctx):
     return {'ok': True, 'id': ctx.services.catalog.create_product(ctx.user, ctx.body())}
+
+
+def update_product(ctx):
+    ctx.services.catalog.update_product(ctx.user, ctx.params['product_id'], ctx.body())
+    return {'ok': True}
 
 
 def remove_product(ctx):
@@ -34,7 +39,7 @@ def import_products(ctx):
     service = ctx.services.product_import
     if fields.get('mode') == 'preview':
         return service.preview(files.get('file'), fields.get('mapping'))
-    return service.import_products(ctx.user, files.get('file'), fields.get('mapping'))
+    return service.import_products(ctx.user, files.get('file'), fields.get('mapping'), fields.get('allow_over_limit'))
 
 
 def register(router):
@@ -42,6 +47,7 @@ def register(router):
     router.add('GET', '/api/products/{product_id}', product_detail, P.CATALOG_MANAGE)
     router.add('GET', '/api/categories', categories, P.CATALOG_MANAGE)
     router.add('POST', '/api/products', create_product, P.CATALOG_MANAGE)
+    router.add('POST', '/api/products/{product_id}', update_product, P.CATALOG_MANAGE)
     router.add('POST', '/api/products/{product_id}/remove', remove_product, P.CATALOG_MANAGE)
-    router.add('POST', '/api/pricing', set_price, P.CATALOG_MANAGE)
+    router.add('POST', '/api/pricing', set_price, P.PRICING_MANAGE)
     router.add('POST', '/api/import/products', import_products, P.CATALOG_MANAGE)

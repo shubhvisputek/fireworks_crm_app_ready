@@ -3,9 +3,15 @@ from crm.services.auth import public_user
 from crm.web.router import AUTHENTICATED, PUBLIC
 
 
+def shop_limits(ctx):
+    settings = ctx.services.settings.get_settings()
+    return {'max_discount_pct': settings.get('max_discount_pct'), 'receipt_format': settings.get('receipt_format', 'A4'),
+            'business_name': settings.get('business_name')}
+
+
 def me(ctx):
     user = ctx.services.auth.user_for_session(ctx.app.session_payload(ctx.request))
-    return {'authenticated': bool(user), 'user': public_user(user)}
+    return {'authenticated': bool(user), 'user': public_user(user), 'limits': shop_limits(ctx) if user else None}
 
 
 def login(ctx):
@@ -15,7 +21,7 @@ def login(ctx):
         raise ValidationError('Invalid login request.')
     user = ctx.services.auth.login(body.get('username', ''), body.get('password', ''))
     ctx.start_session(user)
-    return {'ok': True, 'user': public_user(user)}
+    return {'ok': True, 'user': public_user(user), 'limits': shop_limits(ctx)}
 
 
 def logout(ctx):

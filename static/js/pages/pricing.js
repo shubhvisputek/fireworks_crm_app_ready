@@ -34,4 +34,4 @@ registerActions({
   },
 });
 
-registerPage({ name: 'pricing', label: 'Pricing', title: 'Product Prices', permission: 'catalog.manage', render });
+registerPage({ name: 'pricing', label: 'Pricing', title: 'Product Prices', permission: 'pricing.manage', render });

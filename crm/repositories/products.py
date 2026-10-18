@@ -37,6 +37,13 @@ class ProductRepository(Repository):
     def set_cost_price(self, product_id, cost, updated_at):
         self.execute('UPDATE products SET cost_price=?, updated_at=? WHERE id=?', (cost, updated_at, product_id))
 
+    def update(self, product_id, values):
+        assignments = ', '.join(f'{column}=?' for column in values)
+        self.execute(f'UPDATE products SET {assignments} WHERE id=?', (*values.values(), product_id))
+
+    def barcode_owner(self, barcode):
+        return self.scalar('SELECT id FROM products WHERE barcode=?', (barcode,))
+
     def set_status(self, product_id, status, updated_at):
         self.execute('UPDATE products SET status=?, updated_at=? WHERE id=?', (status, updated_at, product_id))
 

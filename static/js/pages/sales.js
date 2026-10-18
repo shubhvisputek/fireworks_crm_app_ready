@@ -3,11 +3,12 @@ import { api } from '../core/api.js';
 import { $, $$, html, setHtml } from '../core/html.js';
 import { registerActions, formValues } from '../core/actions.js';
 import { dateTime, money, num, todayISO } from '../core/format.js';
-import { findProduct, loadReferenceData, state } from '../core/state.js';
+import { can, findProduct, loadReferenceData, state } from '../core/state.js';
 import { go, registerPage } from '../core/router.js';
 import { closeModal, field, openModal, toast } from '../ui/feedback.js';
 import { table } from '../ui/widgets.js';
 import { loadInvoiceForEdit } from '../billing/bill.js';
+import { billMessage, openWhatsapp } from '../ui/share.js';
 
 let view = 'FINALIZED';
 
@@ -23,13 +24,17 @@ function history(x) {
   return lines.length ? html`<div class="small muted">${lines.map((line, i) => html`${i ? html`<br>` : ''}${line}`)}</div>` : '';
 }
 
+// Only the actions this user is allowed to take are shown (the server enforces the same rules).
 function actions(x) {
-  const pdf = html`<button class="button" data-action="sales.pdf" data-id="${x.id}">PDF</button>`;
-  if (x.status !== 'FINALIZED') return pdf;
-  return html`${pdf}<button class="button" data-action="sales.edit" data-id="${x.id}">Edit</button>
-    ${x.outstanding > 0 ? html`<button class="button" data-action="sales.collect" data-id="${x.id}">Collect</button>` : ''}
-    <button class="button" data-action="sales.return" data-id="${x.id}">Return</button>
-    <button class="button danger" data-action="sales.void" data-id="${x.id}" data-number="${x.invoice_number}">Delete</button>`;
+  const print = can('invoices.print') ? html`<button class="button" data-action="sales.pdf" data-id="${x.id}">PDF</button>
+    <button class="button" data-action="sales.receipt" data-id="${x.id}">Receipt</button>` : '';
+  const share = x.customer_phone ? html`<button class="button" data-action="sales.whatsapp" data-id="${x.id}" title="Send bill on WhatsApp">WhatsApp</button>` : '';
+  if (x.status !== 'FINALIZED') return print;
+  return html`${print}${share}
+    ${can('sales.edit') ? html`<button class="button" data-action="sales.edit" data-id="${x.id}">Edit</button>` : ''}
+    ${x.outstanding > 0 && can('payments.collect') ? html`<button class="button" data-action="sales.collect" data-id="${x.id}">Collect</button>` : ''}
+    ${can('returns.create') ? html`<button class="button" data-action="sales.return" data-id="${x.id}">Return</button>` : ''}
+    ${can('sales.void') ? html`<button class="button danger" data-action="sales.void" data-id="${x.id}" data-number="${x.invoice_number}">Delete</button>` : ''}`;
 }
 
 async function render() {
@@ -40,7 +45,7 @@ async function render() {
     <td>${money(x.grand_total)}</td><td>${money(x.amount_received)}${x.outstanding > 0 ? html`<div class="small muted">Due ${money(x.outstanding)}</div>` : ''}</td>
     <td><div class="row">${actions(x)}</div></td></tr>`);
   setHtml($('#page'), html`<div class="card"><div class="between"><div><h3>Invoices</h3>
-      <div class="small muted">Edit re-issues the bill with a new number and keeps the original as cancelled. Delete voids the sale and restores stock.</div></div>
+      <div class="small muted">${can('sales.view') ? 'All bills.' : 'Bills you made.'} Edit re-issues a bill with a new number and keeps the original as cancelled.</div></div>
       <select class="select" aria-label="Which bills" data-change="sales.view">
         <option value="FINALIZED" ${view === 'FINALIZED' ? html`selected` : ''}>Active bills</option>
         <option value="VOID" ${view === 'VOID' ? html`selected` : ''}>Cancelled / edited bills</option></select></div><br>
@@ -53,6 +58,11 @@ registerActions({
     render();
   },
   'sales.pdf': (el) => window.open(`/api/invoice-pdf/${el.dataset.id}`, '_blank'),
+  'sales.receipt': (el) => window.open(`/api/invoice-receipt/${el.dataset.id}`, '_blank'),
+  'sales.whatsapp': async (el) => {
+    const { invoice, items } = await api.get(`/api/invoices/${el.dataset.id}`);
+    openWhatsapp(invoice.customer_phone, billMessage(invoice, items));
+  },
   'sales.edit': async (el) => {
     const detail = await api.get(`/api/invoices/${el.dataset.id}`);
     const missing = detail.items.filter((item) => !findProduct(item.product_id));
@@ -105,4 +115,4 @@ registerActions({
   },
 });
 
-registerPage({ name: 'sales', label: 'Sales', permission: 'sales.view', render });
+registerPage({ name: 'sales', label: 'Sales', permission: ['sales.view', 'sales.view_own'], render });

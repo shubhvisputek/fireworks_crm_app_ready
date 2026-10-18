@@ -100,9 +100,10 @@ try {
 
   await step('admin login and dashboard', async () => {
     await login(page, server.url, 'admin', 'admin123');
-    assert.equal(await page.innerText('.topbar h1'), 'Owner Dashboard');
+    assert.equal(await page.innerText('.topbar h1'), 'Dashboard');
     const navItems = await page.locator('.nav button').allInnerTexts();
-    assert.deepEqual(navItems, ['Dashboard', 'Billing', 'Sales', 'Products', 'Inventory', 'Customers', 'Expenses', 'Pricing', 'Analytics', 'Settings', 'Users', 'Backup & Export']);
+    assert.deepEqual(navItems, ['Dashboard', 'Billing', 'Sales', 'Cash Closing', 'Credit Dues', 'Products', 'Inventory', 'Suppliers', 'Customers',
+      'Expenses', 'Pricing', 'Analytics', 'Settings', 'Users', 'Audit Log', 'Backup & Export']);
   });
 
   await step('add products', async () => {
@@ -149,8 +150,11 @@ try {
   await step('inventory: purchase and adjustment', async () => {
     await nav(page, 'Inventory');
     await page.click('button:has-text("+ Add Stock / GRN")');
-    const sparkler = await page.locator('#modal select[name=product_id] option:has-text("Sparkler")').getAttribute('value');
-    await submitModal(page, { product_id: sparkler, qty: 5, cost_price: 62, supplier_name: 'Sivakasi Co' }, 'Add Stock');
+    const sparkler = await page.locator('#modal .grn-product option:has-text("Sparkler")').getAttribute('value');
+    await page.locator('#modal .grn-product').selectOption(sparkler);
+    await page.fill('#modal .grn-qty', '5');
+    await page.fill('#modal .grn-cost', '62');
+    await submitModal(page, { supplier_name: 'Sivakasi Co' }, 'Add Stock');
     assert.match(await toastText(page), /Stock added \(PUR-/);
     await page.click('button:has-text("Stock Adjustment")');
     await submitModal(page, { product_id: sparkler, type: 'DAMAGE', qty: 1, reason: 'wet' });
@@ -288,9 +292,103 @@ try {
 
   await step('backup page links', async () => {
     await nav(page, 'Backup & Export');
-    await page.waitForSelector('#page a');
-    const links = await page.locator('#page a').evaluateAll((as) => as.map((a) => a.getAttribute('href')));
+    await page.waitForSelector('#page a[href="/api/backup"]');
+    const links = await page.locator('#page a').evaluateAll((as) => as.map((a) => a.getAttribute('href')).filter((h) => !h.startsWith('/api/backups/')));
     assert.deepEqual(links, ['/api/backup', '/api/export/sales.xlsx', '/api/export/sales-detailed.xlsx', '/api/export/sales.pdf']);
+  });
+
+  await step('backups: automatic daily backup listed, Backup now adds one', async () => {
+    await page.waitForSelector('td:has-text("Automatic (daily)")');
+    await page.click('button:has-text("Backup now")');
+    assert.match(await toastText(page), /Backup saved: fireworks-.*-manual\.sqlite/);
+    await page.waitForSelector('td:has-text("Manual")');
+  });
+
+  await step('suppliers: purchase from a new supplier, ledger and payment', async () => {
+    await nav(page, 'Inventory');
+    await page.click('button:has-text("+ Add Stock / GRN")');
+    await page.fill('#modal input[name=supplier_name]', 'Sivakasi Traders');
+    const rocket = await page.locator('#modal .grn-product option:has-text("Rocket")').getAttribute('value');
+    await page.locator('#modal .grn-product').selectOption(rocket);
+    await page.fill('#modal .grn-qty', '4');
+    await page.fill('#modal .grn-cost', '150');
+    await page.click('#modal button:has-text("+ Another product")');
+    await page.locator('#modal .grn-qty').nth(1).fill('2');
+    await page.locator('#modal .grn-cost').nth(1).fill('50');
+    await page.click('#modal button:has-text("Add Stock")');
+    assert.match(await toastText(page), /Stock added \(PUR-.*₹700\.00\)/);
+    await nav(page, 'Suppliers');
+    const row = page.locator('tr:has-text("Sivakasi Traders")');
+    assert.match(await row.innerText(), /₹700\.00/);
+    await row.locator('button:has-text("Record payment")').click();
+    await submitModal(page, { amount: 300, mode: 'UPI' });
+    assert.match(await toastText(page), /Balance now ₹400\.00/);
+    await page.click('tr:has-text("Sivakasi Traders") button:has-text("Ledger")');
+    await page.waitForSelector('#modal td:has-text("UPI")');
+    await page.keyboard.press('Escape');
+  });
+
+  await step('inventory: seasonal reorder plan', async () => {
+    await nav(page, 'Inventory');
+    await page.click('button:has-text("Seasonal Reorder Plan")');
+    await page.fill('#modal input[name=start]', '2000-01-01');
+    await page.fill('#modal input[name=end]', '2999-12-31');
+    await page.click('#modal button:has-text("Recalculate")');
+    await page.waitForSelector('#modal td:has-text("Sparkler Box")');
+    assert.match(await page.innerText('#modal'), /Estimated purchase cost/);
+    await page.keyboard.press('Escape');
+  });
+
+  await step('barcode on a product, then billing by scanning it', async () => {
+    await nav(page, 'Products');
+    await page.click('#productTable tr:has-text("Sparkler Box") button:has-text("View")');
+    await page.click('#modal button:has-text("Edit")');
+    await submitModal(page, { barcode: '8901234567890' });
+    assert.match(await toastText(page), /Product updated/);
+    await nav(page, 'Billing');
+    await page.fill('#productSearch', '8901234567890');
+    await page.press('#productSearch', 'Enter');
+    assert.match(await page.innerText('#cart'), /Sparkler Box/);
+    await page.click('button:has-text("New Bill")');
+  });
+
+  await step('credit dues with a WhatsApp reminder; receipt printing', async () => {
+    await context.route('https://wa.me/**', (route) => route.fulfill({ body: 'whatsapp' }));
+    await nav(page, 'Billing');
+    await page.fill('#billName', 'Mahesh Credit');
+    await page.click('#billPhone');
+    await page.keyboard.type('9811122233');
+    await page.fill('#productSearch', 'P-1');
+    await page.press('#productSearch', 'Enter');
+    await page.click('button:has-text("Payment & Complete")');
+    await page.locator('#modal .pay-mode').selectOption('Credit');
+    const popup = context.waitForEvent('page');
+    await page.click('#modal button:has-text("Finalize Invoice")');
+    (await popup).close();
+    await nav(page, 'Credit Dues');
+    const row = page.locator('tr:has-text("Mahesh Credit")').first();
+    assert.match(await row.innerText(), /₹100\.00/);
+    const wa = context.waitForEvent('page');
+    await row.locator('button:has-text("WhatsApp reminder")').click();
+    const waPage = await wa;
+    await waPage.waitForLoadState();
+    assert.match(waPage.url(), /^https:\/\/wa\.me\/919811122233\?text=.*Mahesh%20Credit/);
+    await waPage.close();
+    await nav(page, 'Sales');
+    const receipt = context.waitForEvent('request', (r) => /\/api\/invoice-receipt\/\d+$/.test(r.url()));
+    const receiptPopup = context.waitForEvent('page');
+    await page.click('tbody tr:first-child button:has-text("Receipt")');
+    assert.equal((await (await receipt).response()).headers()['content-type'], 'application/pdf');
+    (await receiptPopup).close();
+  });
+
+  await step('audit log shows who did what', async () => {
+    await nav(page, 'Audit Log');
+    await page.waitForSelector('td:has-text("Invoice finalized")');
+    await page.selectOption('#page select[name=entity]', 'SUPPLIER');
+    await page.click('#page button:has-text("Show")');
+    await page.waitForFunction(() => !document.querySelector('#page tbody').innerText.includes('Invoice finalized'));
+    assert.match(await page.innerText('#page tbody'), /Supplier payment/);
   });
 
   await step('stored XSS payload is shown as text, never run', async () => {
@@ -307,12 +405,21 @@ try {
     assert.equal(await page.evaluate(() => window.__pwned), undefined);
   });
 
-  await step('users: create staff', async () => {
+  await step('users: add a cashier with a display name; permission editor', async () => {
     await nav(page, 'Users');
-    await page.fill('input[name=username]', 'rohan');
-    await page.fill('input[name=password]', 'rohanpass1');
-    await page.click('button:has-text("Create staff account")');
-    assert.match(await toastText(page), /Staff account created/);
+    await page.fill('#page input[name=username]', 'rohan');
+    await page.fill('#page input[name=display_name]', 'Rohan');
+    await page.fill('#page input[name=password]', 'rohanpass1');
+    assert.equal(await page.inputValue('#page select[name=role]'), 'CASHIER');
+    await page.click('button:has-text("Add user")');
+    assert.match(await toastText(page), /User added/);
+    await page.click('tr:has-text("Rohan") button:has-text("Edit")');
+    assert.equal(await page.locator('#modal input[name=perm]:disabled').count() > 0, true);
+    assert.equal(await page.isChecked('#modal input[value="billing.create"]'), true);
+    assert.equal(await page.isChecked('#modal input[value="sales.void"]'), false);
+    await page.check('#modal input[name=custom]');
+    assert.equal(await page.locator('#modal input[name=perm]:disabled').count(), 0);
+    await page.keyboard.press('Escape');
   });
 
   await step('staff sees only their pages and can bill and change password', async () => {
@@ -320,10 +427,11 @@ try {
     const staff = await staffContext.newPage();
     watch(staff, 'staff');
     await login(staff, server.url, 'rohan', 'rohanpass1');
-    assert.deepEqual(await staff.locator('.nav button').allInnerTexts(), ['Dashboard', 'Billing', 'Expenses', 'Analytics', 'Backup & Export']);
-    await staff.goto(server.url + '/#sales');
+    assert.deepEqual(await staff.locator('.nav button').allInnerTexts(), ['Dashboard', 'Billing', 'Sales', 'Cash Closing', 'Customers', 'Expenses']);
+    assert.doesNotMatch(await staff.innerText('#page'), /Gross Profit|At cost/);
+    await staff.goto(server.url + '/#users');
     await staff.waitForSelector('.topbar h1');
-    assert.equal(await staff.innerText('.topbar h1'), 'Owner Dashboard');
+    assert.equal(await staff.innerText('.topbar h1'), 'Dashboard');
     await staff.click('.nav button:has-text("Billing")');
     await staff.fill('#productSearch', 'P-1');
     await staff.press('#productSearch', 'Enter');
@@ -332,6 +440,32 @@ try {
     await staff.click('#modal button:has-text("Finalize Invoice")');
     (await popup).close();
     assert.match(await toastText(staff), /completed/);
+    // A 15% discount is above the 10% limit: a manager must approve it.
+    await staff.fill('#productSearch', 'P-1');
+    await staff.press('#productSearch', 'Enter');
+    await staff.click('button[data-pct="15"]');
+    await staff.click('button:has-text("Payment & Complete")');
+    await staff.waitForSelector('#approvalBox');
+    await staff.fill('#modal input[name=approver]', 'admin');
+    await staff.fill('#modal input[name=approver_password]', 'admin123');
+    const approvedPopup = staffContext.waitForEvent('page');
+    await staff.click('#modal button:has-text("Finalize Invoice")');
+    (await approvedPopup).close();
+    assert.match(await toastText(staff), /completed/);
+    // Sales shows only this cashier's bills, without edit/void buttons.
+    await staff.click('.nav button:has-text("Sales")');
+    await staff.waitForSelector('th:has-text("Billed by")');
+    const billers = await staff.locator('tbody tr td:nth-child(4)').allInnerTexts();
+    assert.ok(billers.length === 2 && billers.every((b) => b.startsWith('Rohan')), billers.join('|'));
+    assert.equal(await staff.locator('button:has-text("Delete"), button:has-text("Edit")').count(), 0);
+    // Close the drawer: 100 + 85 cash taken.
+    await staff.click('.nav button:has-text("Cash Closing")');
+    await staff.waitForSelector('text=Cash expected in drawer');
+    assert.match(await staff.innerText('#page'), /₹185\.00/);
+    await staff.fill('input[name=counted_cash]', '180');
+    await staff.click('button:has-text("Close drawer")');
+    assert.match(await toastText(staff), /Difference -₹5\.00|Difference −₹5\.00/);
+    await staff.click('.nav button:has-text("Billing")');
     await staff.click('button:has-text("Held Bills")');
     assert.equal(await staff.locator('#modal button:has-text("Delete")').count(), 0);
     await staff.click('#modal button[data-action="modal.close"]');
@@ -346,7 +480,9 @@ try {
   await step('admin sees the staff bill with Billed by', async () => {
     await nav(page, 'Sales');
     await page.waitForSelector('th:has-text("Billed by")');
-    assert.match(await page.innerText('tbody tr:first-child'), /rohan/);
+    assert.match(await page.innerText('tbody tr:first-child'), /Rohan/);
+    await nav(page, 'Cash Closing');
+    await page.waitForSelector('td:has-text("Rohan")');
   });
 
   assert.deepEqual(problems, [], 'browser errors:\n' + problems.join('\n'));

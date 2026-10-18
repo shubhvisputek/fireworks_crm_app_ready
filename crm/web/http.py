@@ -15,7 +15,7 @@ class Request:
         self.query = {key: values[0] for key, values in urllib.parse.parse_qs(parsed.query).items()}
         self.headers = headers
         self._read = body_reader
-        self._max = max_body_bytes
+        self.max_body = max_body_bytes
         self._raw = None
 
     def arg(self, name, default=None):
@@ -27,8 +27,8 @@ class Request:
                 length = int(self.headers.get('Content-Length') or 0)
             except ValueError:
                 raise ValidationError('Invalid Content-Length header.')
-            if length < 0 or length > self._max:
-                raise ValidationError(f'Request is too large (limit {self._max // (1024 * 1024)} MB).')
+            if length < 0 or length > self.max_body:
+                raise ValidationError(f'Request is too large (limit {self.max_body // (1024 * 1024)} MB).')
             self._raw = self._read(length) if length else b''
         return self._raw
 

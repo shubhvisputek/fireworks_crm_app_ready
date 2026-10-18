@@ -10,5 +10,5 @@ def create(ctx):
 
 
 def register(router):
-    router.add('GET', '/api/customers', search, P.CUSTOMERS_MANAGE)
+    router.add('GET', '/api/customers', search, (P.CUSTOMERS_VIEW, P.CUSTOMERS_MANAGE))
     router.add('POST', '/api/customers', create, P.CUSTOMERS_MANAGE)

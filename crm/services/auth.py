@@ -1,5 +1,5 @@
 """Login, sessions and password changes."""
-from crm.domain.permissions import permissions_for
+from crm.domain.permissions import ROLE_LABELS, effective_permissions
 from crm.errors import AuthenticationError, RateLimited, ValidationError
 from crm.security import hash_password, verify_password
 from crm.services.base import Service
@@ -8,11 +8,14 @@ MIN_PASSWORD_LENGTH = 8
 
 
 def public_user(user):
-    """User fields safe to send to the browser, plus their permissions."""
+    """User fields safe to send to the browser, plus their effective permissions."""
     if not user:
         return None
-    safe = {key: user[key] for key in ('id', 'username', 'role', 'active', 'created_at') if key in user}
-    safe['permissions'] = sorted(p.value for p in permissions_for(user.get('role')))
+    safe = {key: user.get(key) for key in ('id', 'username', 'display_name', 'role', 'active', 'created_at')}
+    safe['name'] = user.get('display_name') or user.get('username')
+    safe['role_label'] = ROLE_LABELS.get(user.get('role'), user.get('role'))
+    safe['custom_permissions'] = bool(user.get('permissions_json')) and user.get('role') != 'OWNER'
+    safe['permissions'] = sorted(p.value for p in effective_permissions(user))
     return safe
 
 
@@ -29,6 +32,18 @@ class AuthService(Service):
         if not user or not verify_password(str(password or ''), user['password_hash']):
             self.throttle.record_failure(key)
             raise AuthenticationError('Invalid username or password')
+        self.throttle.reset(key)
+        return user
+
+    def verify_credentials(self, username, password, purpose='approval'):
+        """Check another user's password (e.g. a manager approving a discount). Throttled like logins."""
+        key = f'{purpose}:{str(username or "").strip().lower()}'
+        if self.throttle.is_blocked(key):
+            raise RateLimited('Too many failed attempts. Try again in 15 minutes.')
+        user = self.repos.users.get_active_by_username(str(username or ''))
+        if not user or not verify_password(str(password or ''), user['password_hash']):
+            self.throttle.record_failure(key)
+            raise ValidationError('Approver username or password is incorrect.')
         self.throttle.reset(key)
         return user
 

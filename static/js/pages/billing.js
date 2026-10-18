@@ -73,7 +73,7 @@ function searchMatches(query) {
   const rank = (p) => {
     const sku = String(p.sku).toLowerCase();
     const name = String(p.name).toLowerCase();
-    if (sku === q) return 0;
+    if (sku === q || String(p.barcode || '').toLowerCase() === q) return 0;
     if (sku.startsWith(q)) return 1;
     if (name.startsWith(q)) return 2;
     return sku.includes(q) || name.includes(q) ? 3 : -1;
@@ -106,6 +106,16 @@ function paymentRow(amount = 0, mode = 'Cash') {
     <label>Amount<input class="input pay-amount" type="number" min="0" step="0.01" value="${amount}"></label></div>`;
 }
 
+// Discounts above the shop limit need a manager's username and password, unless this user may approve them.
+function needsApproval(totals) {
+  if (!totals.discount || !totals.subtotal || can('discount.approve')) return false;
+  return (totals.discount / totals.subtotal) * 100 > Number(state.limits.max_discount_pct ?? 100) + 1e-9;
+}
+
+const approvalFields = () => html`<div class="notice warn" id="approvalBox">Discount above ${state.limits.max_discount_pct}% needs a manager's approval.
+  <div class="formgrid" style="margin-top:8px"><label>Approver username<input class="input" name="approver" autocomplete="off" required></label>
+  <label>Approver password<input class="input" name="approver_password" type="password" autocomplete="off" required></label></div></div><br>`;
+
 function openPayment() {
   if (!bill.items.length) return toast('Add products first');
   const totals = billTotals();
@@ -120,6 +130,7 @@ function openPayment() {
     <button type="button" class="button" data-action="billing.addPayment">+ Payment</button><br><br>
     <label>Notes<textarea class="textarea" name="notes">${bill.editing?.notes || ''}</textarea></label><br>
     ${bill.editing ? html`<label>Reason for edit (required)<input class="input" name="reason" required minlength="3" placeholder="e.g. customer added 2 boxes"></label><br>` : ''}
+    <div id="approvalSlot">${needsApproval(totals) ? approvalFields() : ''}</div>
     <div class="row" style="justify-content:flex-end"><button type="button" class="button" data-action="modal.close">Cancel</button>
       <button class="button primary">${bill.editing ? 'Save edited bill' : 'Finalize Invoice'}</button></div></form>`);
 }
@@ -139,8 +150,10 @@ async function finalize(form) {
   const pdfWindow = window.open('about:blank', '_blank'); // opened now so popup blockers allow it
   try {
     const payload = billPayload(payments, form.elements.notes.value);
+    if (form.elements.approver) payload.approval = { username: form.elements.approver.value, password: form.elements.approver_password.value };
     const result = editing ? await api.post(`/api/invoices/${editing.id}/edit`, { ...payload, reason }) : await api.post('/api/sales', payload);
-    if (pdfWindow) pdfWindow.location = `/api/invoice-pdf/${result.invoice_id}`;
+    const printPath = state.limits.receipt_format === '80mm' ? 'invoice-receipt' : 'invoice-pdf';
+    if (pdfWindow) pdfWindow.location = `/api/${printPath}/${result.invoice_id}`;
     closeModal();
     resetBill();
     await loadReferenceData();
@@ -148,6 +161,10 @@ async function finalize(form) {
     go(editing ? 'sales' : 'billing');
   } catch (error) {
     pdfWindow?.close();
+    if (error.code === 'DISCOUNT_APPROVAL_REQUIRED' && !form.elements.approver) {
+      setHtml($('#approvalSlot'), approvalFields());
+      form.elements.approver.focus();
+    }
     throw error;
   }
 }

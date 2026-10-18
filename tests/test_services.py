@@ -78,7 +78,7 @@ class SalesRuleTests(ServiceTestCase):
     def test_purchase_updates_cost_price(self):
         pid = self.product(price=100, stock=0, cost=50)
         self.services.inventory.record_purchase(self.admin, {'items': [{'product_id': pid, 'qty': 5, 'cost_price': 70}]})
-        self.assertEqual(self.services.catalog.product_detail(pid)['product']['cost_price'], 70)
+        self.assertEqual(self.services.catalog.product_detail(self.admin, pid)['product']['cost_price'], 70)
 
     def test_same_product_on_two_lines_cannot_oversell(self):
         pid = self.product(price=10, stock=3)
@@ -134,3 +134,22 @@ class DemoSeedTests(ServiceTestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class DailyBackupTests(ServiceTestCase):
+    def test_one_backup_per_day_and_old_ones_pruned(self):
+        from crm.backups import BackupManager
+        backup_dir = os.path.join(self.tmp, 'backups')
+        start = dt.datetime(2026, 10, 1, 9, 0, tzinfo=dt.timezone.utc)
+        for day in range(6):
+            clock = FixedClock(start + dt.timedelta(days=day))
+            manager = BackupManager(self.app.config.db_path, backup_dir, clock)
+            manager.ensure_daily(keep_days=4)
+            manager.ensure_daily(keep_days=4)  # a second check the same day does nothing
+        daily = [b for b in manager.list() if b['kind'] == 'daily']
+        self.assertEqual(len(daily), 4)
+        self.assertEqual(daily[0]['created'][:10], '2026-10-06')
+        manager.create('manual')
+        manager.prune(keep_days=1)  # never fewer than three automatic backups; manual ones are kept
+        self.assertEqual(len([b for b in manager.list() if b['kind'] == 'daily']), 3)
+        self.assertEqual(len([b for b in manager.list() if b['kind'] == 'manual']), 1)

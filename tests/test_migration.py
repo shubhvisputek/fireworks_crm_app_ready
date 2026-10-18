@@ -67,7 +67,8 @@ class LegacyDatabaseTests(unittest.TestCase):
         conn = sqlite3.connect(self.db)
         versions = [row[0] for row in conn.execute('SELECT version FROM schema_migrations ORDER BY version')]
         conn.close()
-        self.assertEqual(versions, [1, 2, 3, 4])
+        from crm.db.schema import MIGRATIONS
+        self.assertEqual(versions, [version for version, _step in MIGRATIONS])
 
 
 if __name__ == '__main__':

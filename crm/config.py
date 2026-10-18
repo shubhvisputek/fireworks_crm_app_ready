@@ -11,6 +11,7 @@ class Config:
     db_path: str
     secret_path: str
     static_dir: str
+    backup_dir: str = ''
     host: str = '127.0.0.1'
     port: int = 8000
     timezone: str = 'Asia/Kolkata'
@@ -19,6 +20,8 @@ class Config:
     require_admin_password: bool = False
     seed_demo: bool = False
     max_body_bytes: int = 10 * 1024 * 1024
+    max_restore_bytes: int = 500 * 1024 * 1024
+    auto_backup: bool = True
     session_days: int = 7
     login_max_failures: int = 10
     login_window_seconds: int = 15 * 60
@@ -36,6 +39,8 @@ class Config:
             db_path=env.get('FIREWORKS_DB', os.path.join(data_dir, 'fireworks.db')),
             secret_path=env.get('FIREWORKS_SECRET', os.path.join(data_dir, '.secret')),
             static_dir=os.path.join(BASE_DIR, 'static'),
+            backup_dir=env.get('FIREWORKS_BACKUP_DIR', os.path.join(data_dir, 'backups')),
+            auto_backup=env.get('FIREWORKS_AUTO_BACKUP', '1') != '0',
             host=env.get('HOST', '127.0.0.1'),
             port=int(env.get('PORT', '8000')),
             timezone=env.get('FIREWORKS_TIMEZONE', 'Asia/Kolkata'),
@@ -47,6 +52,6 @@ class Config:
         )
 
     def ensure_directories(self):
-        for path in (os.path.dirname(self.db_path), os.path.dirname(self.secret_path)):
+        for path in (os.path.dirname(self.db_path), os.path.dirname(self.secret_path), self.backup_dir):
             if path:
                 os.makedirs(path, exist_ok=True)

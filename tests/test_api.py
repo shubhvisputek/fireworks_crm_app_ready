@@ -21,8 +21,8 @@ class ApiTestCase(unittest.TestCase):
         cls.server.stop()
 
     @classmethod
-    def make_staff(cls, username, password='staffpass1'):
-        assert cls.admin.post('/api/users', {'username': username, 'password': password}).status == 200
+    def make_staff(cls, username, password='staffpass1', role='STAFF'):
+        assert cls.admin.post('/api/users', {'username': username, 'password': password, 'role': role}).status == 200
         client = cls.server.client()
         assert client.login(username, password).status == 200
         return client
@@ -43,7 +43,7 @@ class ApiTestCase(unittest.TestCase):
 class AuthAndSecurityTests(ApiTestCase):
     def test_me_requires_login(self):
         anon = self.server.client()
-        self.assertEqual(anon.get('/api/me').json(), {'authenticated': False, 'user': None})
+        self.assertEqual(anon.get('/api/me').json(), {'authenticated': False, 'user': None, 'limits': None})
         self.assertEqual(anon.get('/api/dashboard').status, 401)
 
     def test_login_failure_and_success(self):
@@ -104,7 +104,7 @@ class AuthAndSecurityTests(ApiTestCase):
 class PermissionTests(ApiTestCase):
     STAFF_ALLOWED_GET = ['/api/dashboard', '/api/analytics', '/api/expenses', '/api/products', '/api/held-bills', '/api/backup',
                          '/api/export/sales.xlsx', '/api/export/sales-detailed.xlsx', '/api/export/sales.pdf']
-    STAFF_DENIED_GET = ['/api/settings', '/api/users', '/api/customers', '/api/invoices', '/api/purchases', '/api/categories',
+    STAFF_DENIED_GET = ['/api/settings', '/api/users', '/api/customers', '/api/purchases', '/api/categories',
                         '/api/recurring-expenses', '/api/inventory/ledger?product_id=1']
     STAFF_DENIED_POST = ['/api/users', '/api/products', '/api/customers', '/api/settings', '/api/pricing', '/api/inventory/adjust',
                          '/api/inventory/remove', '/api/purchases', '/api/returns', '/api/payments', '/api/invoices/1/void',
@@ -296,7 +296,7 @@ class SalesTests(ApiTestCase):
 
     def test_invoice_pdf(self):
         pid = self.make_product()
-        sale = self.sell(self.admin, [{'product_id': pid, 'qty': 1}], [{'mode': 'UPI', 'amount': 100}]).json()
+        sale = self.sell(self.staff, [{'product_id': pid, 'qty': 1}], [{'mode': 'UPI', 'amount': 100}]).json()
         pdf = self.staff.get(f"/api/invoice-pdf/{sale['invoice_id']}")
         self.assertEqual(pdf.status, 200)
         self.assertEqual(pdf.headers['Content-Type'], 'application/pdf')

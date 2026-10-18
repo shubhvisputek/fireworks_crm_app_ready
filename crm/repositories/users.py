@@ -1,6 +1,6 @@
 from crm.repositories.base import Repository
 
-PUBLIC_COLUMNS = 'id, username, role, active, created_at'
+PUBLIC_COLUMNS = 'id, username, display_name, role, permissions_json, active, created_at'
 
 
 class UserRepository(Repository):
@@ -28,8 +28,17 @@ class UserRepository(Repository):
     def count_active_owners(self):
         return self.scalar("SELECT COUNT(*) FROM users WHERE role='OWNER' AND active=1", default=0)
 
-    def create(self, username, password_hash, role, created_at):
-        return self.insert('users', {'username': username, 'password_hash': password_hash, 'role': role, 'active': 1, 'created_at': created_at})
+    def create(self, username, password_hash, role, created_at, display_name=None, permissions_json=None):
+        return self.insert('users', {'username': username, 'password_hash': password_hash, 'role': role, 'active': 1,
+                                     'created_at': created_at, 'display_name': display_name, 'permissions_json': permissions_json})
+
+    def update_profile(self, user_id, role, display_name, permissions_json):
+        # Changing what someone may do ends their open sessions, so new limits apply immediately.
+        self.execute('UPDATE users SET role=?, display_name=?, permissions_json=?, session_version=session_version+1 WHERE id=?',
+                     (role, display_name, permissions_json, user_id))
+
+    def set_display_name(self, user_id, display_name):
+        self.execute('UPDATE users SET display_name=? WHERE id=?', (display_name, user_id))
 
     def set_active(self, user_id, active):
         # Deactivating also bumps the session version so open sessions end immediately.

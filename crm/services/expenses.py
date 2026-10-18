@@ -1,6 +1,7 @@
 """Shop expenses and recurring expense templates."""
 from crm.domain import validation as v
 from crm.domain.money import money
+from crm.domain.permissions import Permission as P
 from crm.errors import ValidationError
 from crm.services.base import Service
 
@@ -8,10 +9,11 @@ FREQUENCIES = ('DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'YEARLY')
 
 
 class ExpenseService(Service):
-    def list(self, start=None, end=None):
+    def list(self, actor, start=None, end=None):
+        """Everyone's expenses with 'See all expenses', otherwise only the ones this user entered."""
         start = v.iso_date(start, 'Start date') or self.today()
         end = v.iso_date(end, 'End date') or self.today()
-        return self.repos.expenses.list(start, end)
+        return self.repos.expenses.list(start, end, user_id=None if self.can(actor, P.EXPENSES_VIEW) else actor['id'])
 
     def total(self, start, end):
         return money(self.repos.expenses.total(start, end))

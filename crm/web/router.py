@@ -5,6 +5,7 @@ from typing import Callable
 
 PUBLIC = 'public'            # no login needed
 AUTHENTICATED = 'authenticated'  # any logged-in user
+# A route permission may also be a tuple: the user needs any one of them.
 
 
 @dataclass
@@ -13,16 +14,17 @@ class Route:
     pattern: re.Pattern
     handler: Callable
     permission: object
+    max_body: int | None = None  # override the request size limit (e.g. backup uploads)
 
 
 class Router:
     def __init__(self):
         self.routes = []
 
-    def add(self, method, path, handler, permission):
+    def add(self, method, path, handler, permission, max_body=None):
         """Register a route. `{name}` in the path matches a positive integer passed as `name`."""
         regex = '^' + re.sub(r'\{(\w+)\}', r'(?P<\1>[0-9]+)', path) + '$'
-        self.routes.append(Route(method, re.compile(regex), handler, permission))
+        self.routes.append(Route(method, re.compile(regex), handler, permission, max_body))
 
     def get(self, path, permission):
         return lambda handler: self.add('GET', path, handler, permission) or handler

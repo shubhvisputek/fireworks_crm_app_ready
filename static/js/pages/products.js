@@ -3,15 +3,17 @@ import { api } from '../core/api.js';
 import { $, $$, html, setHtml } from '../core/html.js';
 import { formValues, registerActions } from '../core/actions.js';
 import { dateTime, money, num } from '../core/format.js';
-import { findProduct, loadReferenceData, state } from '../core/state.js';
+import { can, findProduct, loadReferenceData, state } from '../core/state.js';
 import { registerPage } from '../core/router.js';
 import { closeModal, formModal, openModal, toast } from '../ui/feedback.js';
+import { withStorageConfirm } from '../ui/share.js';
 import { table } from '../ui/widgets.js';
 
 const IMPORT_FIELDS = [
   ['sku', 'Product ID / Serial Number'], ['name', 'Product Name'], ['category', 'Category'], ['subcategory', 'Subcategory'],
   ['brand', 'Brand / Manufacturer'], ['unit', 'Unit'], ['unit_price', 'Default Unit Selling Price'], ['cost_price', 'Cost Price'],
   ['opening_stock', 'Opening Stock'], ['reorder_level', 'Minimum Stock'], ['status', 'Product Status'],
+  ['barcode', 'Barcode'], ['explosive_kg', 'Explosive content per unit (kg)'],
 ];
 const STATUS_OPTIONS = [['ACTIVE', 'Active'], ['INACTIVE', 'Inactive']];
 let query = '';
@@ -24,7 +26,7 @@ function productRows() {
   const rows = state.products
     .filter((p) => !q || [p.sku, p.name, p.category].some((value) => String(value || '').toLowerCase().includes(q)))
     .sort(bySku);
-  return rows.map((p) => html`<tr><td>${p.sku}</td><td><strong>${p.name}</strong></td><td>${p.category || ''}</td><td>${p.unit}</td>
+  return rows.map((p) => html`<tr><td>${p.sku}${p.barcode ? html`<div class="small muted">${p.barcode}</div>` : ''}</td><td><strong>${p.name}</strong></td><td>${p.category || ''}</td><td>${p.unit}</td>
     <td>${money(p.default_unit_price)}</td><td>${num(p.current_stock_base)}</td><td>${p.status}</td>
     <td><button class="button" data-action="products.view" data-id="${p.id}">View</button></td></tr>`);
 }
@@ -47,14 +49,19 @@ export async function showProductDetail(productId, onChange) {
   const p = d.product;
   openModal(p.name, html`<div class="grid two">
       <div class="notice">Product ID <strong>${p.sku}</strong></div><div class="notice">Available Stock <strong>${num(d.stock)} ${p.unit}</strong></div>
-      <div class="notice">Default Unit Price <strong>${money(p.default_unit_price)}</strong></div><div class="notice">Cost Price <strong>${money(p.cost_price)}</strong></div>
+      <div class="notice">Default Unit Price <strong>${money(p.default_unit_price)}</strong></div>
+      ${'cost_price' in p ? html`<div class="notice">Cost Price <strong>${money(p.cost_price)}</strong></div>` : ''}
+      <div class="notice">Barcode <strong>${p.barcode || '—'}</strong></div><div class="notice">Explosive content <strong>${num(p.explosive_kg)} kg/unit</strong></div>
       <div class="notice">Status <strong>${p.status}</strong></div><div class="notice">Last sale <strong>${d.last_sale || 'Never'}</strong></div></div><br>
-    <div class="row"><button class="button" data-action="products.removeStock" data-id="${p.id}">Remove Stock</button>
+    <div class="row"><button class="button primary" data-action="products.edit" data-id="${p.id}">Edit</button>
+      ${can('inventory.manage') ? html`<button class="button" data-action="products.removeStock" data-id="${p.id}">Remove Stock</button>` : ''}
       <button class="button" data-action="products.ledger" data-id="${p.id}">Stock Ledger</button>
       <button class="button danger" data-action="products.remove" data-id="${p.id}">Remove Product</button></div>`);
+  editing = p;
   detailChanged = onChange;
 }
 let detailChanged = render;
+let editing = null;
 
 async function refresh() {
   await loadReferenceData();
@@ -71,17 +78,37 @@ registerActions({
     { name: 'sku', label: 'Product ID / Serial Number', required: true }, { name: 'name', label: 'Product Name', required: true },
     { name: 'category', label: 'Category' }, { name: 'subcategory', label: 'Subcategory' }, { name: 'brand', label: 'Brand / Manufacturer' },
     { name: 'unit', label: 'Unit', value: 'Box' }, { name: 'unit_price', label: 'Default Unit Selling Price', type: 'number', value: 0, required: true },
-    { name: 'cost_price', label: 'Cost Price (for profit reports)', type: 'number', value: 0 },
+    ...(can('profit.view') ? [{ name: 'cost_price', label: 'Cost Price (for profit reports)', type: 'number', value: 0 }] : []),
     { name: 'opening_stock', label: 'Opening Stock', type: 'number', value: 0 }, { name: 'reorder_level', label: 'Minimum Stock', type: 'number', value: 0 },
+    { name: 'barcode', label: 'Barcode (scan or type)' }, { name: 'explosive_kg', label: 'Explosive content per unit (kg)', type: 'number', value: 0, step: '0.001' },
     { name: 'status', label: 'Product Status', type: 'select', value: 'ACTIVE', options: STATUS_OPTIONS },
   ], 'products.create'),
   'products.create': async (form) => {
-    await api.post('/api/products', formValues(form));
+    const values = formValues(form);
+    if (!(await withStorageConfirm((allow) => api.post('/api/products', { ...values, allow_over_limit: allow })))) return;
     detailChanged = render;
     await refresh();
     toast('Product added');
   },
   'products.view': (el) => showProductDetail(Number(el.dataset.id), render),
+  'products.edit': () => {
+    const p = editing;
+    formModal(`Edit ${p.name}`, [
+      { name: 'name', label: 'Product Name', value: p.name, required: true }, { name: 'category', label: 'Category', value: p.category || '' },
+      { name: 'subcategory', label: 'Subcategory', value: p.subcategory || '' }, { name: 'brand', label: 'Brand / Manufacturer', value: p.brand || '' },
+      { name: 'unit', label: 'Unit', value: p.unit }, { name: 'reorder_level', label: 'Minimum Stock', type: 'number', value: p.reorder_level },
+      { name: 'barcode', label: 'Barcode', value: p.barcode || '' },
+      { name: 'explosive_kg', label: 'Explosive content per unit (kg)', type: 'number', value: p.explosive_kg || 0, step: '0.001' },
+      ...('cost_price' in p ? [{ name: 'cost_price', label: 'Cost Price', type: 'number', value: p.cost_price }] : []),
+      { name: 'status', label: 'Product Status', type: 'select', value: p.status, options: STATUS_OPTIONS },
+    ], 'products.saveEdit', { hidden: { product_id: p.id }, note: 'Selling price is changed on the Pricing page.' });
+  },
+  'products.saveEdit': async (form) => {
+    const { product_id: id, ...values } = formValues(form);
+    await api.post(`/api/products/${id}`, values);
+    await refresh();
+    toast('Product updated');
+  },
   'products.removeStock': (el) => {
     const product = findProduct(el.dataset.id);
     formModal('Remove Stock', [
@@ -129,11 +156,16 @@ registerActions({
   'products.confirmImport': async (form) => {
     const mapping = Object.fromEntries($$('.import-map', form).map((select) => [select.dataset.key, select.value || null]));
     if (!mapping.sku || !mapping.name || !mapping.unit_price) return toast('Product ID, Product Name, and Unit Price are mandatory');
-    const data = new FormData();
-    data.append('file', importFile);
-    data.append('mapping', JSON.stringify(mapping));
+    const upload = (allow) => {
+      const data = new FormData();
+      data.append('file', importFile);
+      data.append('mapping', JSON.stringify(mapping));
+      if (allow) data.append('allow_over_limit', '1');
+      return api.upload('/api/import/products', data);
+    };
     try {
-      const result = await api.upload('/api/import/products', data);
+      const result = await withStorageConfirm(upload);
+      if (!result) return;
       detailChanged = render;
       await refresh();
       toast(`Imported ${result.imported} of ${result.total_rows} products`);

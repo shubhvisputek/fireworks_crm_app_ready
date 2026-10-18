@@ -34,6 +34,8 @@ Open `http://localhost:8000` and sign in as `admin` / `admin123`, then change th
 | `FIREWORKS_TIMEZONE` | `Asia/Kolkata` | Business day used for bill and report dates |
 | `FIREWORKS_SECURE_COOKIES` | off | `1` when served over HTTPS |
 | `FIREWORKS_SEED_DEMO` | off | `1` loads demo data into an empty database |
+| `FIREWORKS_BACKUP_DIR` | `data/backups` | Where daily and manual database backups are kept |
+| `FIREWORKS_AUTO_BACKUP` | on | `0` turns off the automatic daily backup |
 
 ## Features
 
@@ -46,8 +48,20 @@ Open `http://localhost:8000` and sign in as `admin` / `admin123`, then change th
 - **Customers:** customer master. Customers are also created automatically from a name or mobile number typed on a bill.
 - **Expenses** and recurring expense templates; **dashboard** and **analytics** (sales, gross profit after cost of goods, net profit after expenses, top/bottom products, payment mix, presets including the configured season).
 - **Settings**, sales targets, invoice prefix and footer; audit log of every change.
-- **Users and permissions:** administrators manage staff accounts. Staff can use Dashboard, Billing, Expenses, Analytics and Backup & Export, and change their own password. The server enforces every permission, not just the menu.
-- **Backups and exports:** JSON backup (no password hashes), summary and detailed Excel, PDF sales report. Files are generated on demand and never left on the server.
+- **Roles and permissions:** Owner, Manager, Cashier, Stock keeper, Accountant (plus "Staff (legacy)" for accounts created earlier, which keep their old access). The Owner can tick or untick individual permissions per person. The server enforces every rule, not just the menu:
+  - Cashiers see only **their own** bills, held bills and expenses.
+  - Cost price, profit, margins and stock value are removed from every response unless the user has *See cost, profit and margins*.
+  - Changing someone's role or permissions signs them out so the new access applies immediately.
+- **Discount approval:** discounts above the limit in Settings (default 10%) need a manager's username and password at the counter. The approver is recorded on the bill.
+- **Day-end cash closing:** each cashier sees the cash, UPI and card they took since their last closing (minus refunds and cash expenses), enters the counted cash, and the difference is recorded. Managers and accountants see everyone's closings.
+- **Credit dues:** who owes what, oldest bills first, with **Collect** and a **WhatsApp reminder** message.
+- **Suppliers:** supplier list with balance owed, purchase ledger and supplier payments. Purchases (GRN) can include several products and create the supplier automatically.
+- **Seasonal reorder plan:** last season's sales plus expected growth, minus stock in hand, per product, with estimated cost.
+- **Barcodes:** set a barcode per product; scanning it in Billing adds the item.
+- **Thermal receipts and WhatsApp:** 80 mm receipt PDF (choose A4 or 80 mm in Settings for after-billing printing); send a bill summary to the customer on WhatsApp.
+- **Licence storage limit:** set explosive content per product (kg) and the licence limit in Settings. Stock-in that would exceed it asks for confirmation, and the dashboard warns when over.
+- **Audit log:** every change, who made it and when, with before/after details. Filter by date, user and area.
+- **Backups:** an automatic database backup every day (keeps the last 30 by default), **Backup now**, download, and **restore** from the list or from a file (a safety copy is taken first). Also JSON export, summary and detailed Excel, PDF sales report.
 
 ## Tests
 

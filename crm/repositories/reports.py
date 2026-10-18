@@ -63,3 +63,18 @@ class ReportRepository(Repository):
 
     def inventory_cost(self):
         return self.scalar(f"SELECT COALESCE(SUM(p.cost_price * {STOCK_SQL}), 0) FROM products p WHERE p.status='ACTIVE'", default=0)
+
+    def dues(self):
+        """Finalized bills with credit still outstanding, oldest first."""
+        return self.all('''SELECT i.id, i.invoice_number, i.invoice_date, i.customer_id, i.customer_name_snapshot, c.phone AS customer_phone,
+                                  i.grand_total, i.amount_received, i.outstanding
+                           FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id
+                           WHERE i.status='FINALIZED' AND i.outstanding > 0.009 ORDER BY i.invoice_date, i.id''')
+
+    def quantity_sold_by_product(self, start, end):
+        rows = self.all(f'''SELECT ii.product_id, SUM(ii.qty_input) AS qty FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id
+                            WHERE {FINALIZED_IN_RANGE} GROUP BY ii.product_id''', (start, end))
+        return {row['product_id']: row['qty'] for row in rows}
+
+    def stored_explosive_kg(self):
+        return self.scalar(f"SELECT COALESCE(SUM(p.explosive_kg * MAX({STOCK_SQL}, 0)), 0) FROM products p", default=0)

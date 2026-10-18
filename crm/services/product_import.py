@@ -7,6 +7,7 @@ import re
 from openpyxl import load_workbook
 
 from crm.domain import validation as v
+from crm.domain.permissions import Permission as P
 from crm.errors import ValidationError
 from crm.services.base import Service
 from crm.services.catalog import PRODUCT_STATUSES
@@ -29,6 +30,8 @@ COLUMN_ALIASES = {
     'opening_stock': ['opening stock', 'opening_stock', 'stock', 'stock quantity', 'opening quantity'],
     'reorder_level': ['minimum stock / reorder level', 'reorder level', 'reorder_level', 'minimum stock'],
     'status': ['product status', 'status'],
+    'barcode': ['barcode', 'ean', 'upc', 'bar code'],
+    'explosive_kg': ['explosive kg', 'net explosive content', 'nec kg', 'explosive content', 'explosive weight'],
 }
 
 
@@ -136,16 +139,21 @@ class ProductImportService(Service):
         status = v.text(self._cell(row, mapping, 'status'), 20).upper() or 'ACTIVE'
         if status not in PRODUCT_STATUSES:
             raise ValidationError(f'Product status must be ACTIVE or INACTIVE, not {status}')
+        explosive_kg = v.number(self._cell(row, mapping, 'explosive_kg'), 0)
+        if explosive_kg < 0:
+            raise ValidationError('Explosive content cannot be negative')
         return {
+            'barcode': v.text(self._cell(row, mapping, 'barcode'), 64) or None, 'explosive_kg': explosive_kg,
             'sku': sku, 'name': name, 'unit': v.text(self._cell(row, mapping, 'unit'), 30) or 'unit',
             'category': v.text(self._cell(row, mapping, 'category'), 100), 'subcategory': v.text(self._cell(row, mapping, 'subcategory'), 100),
             'brand': v.text(self._cell(row, mapping, 'brand'), 100), 'reorder_level': max(0.0, v.number(self._cell(row, mapping, 'reorder_level'), 0)),
             'status': status, 'default_unit_price': price, 'cost_price': cost,
         }, opening
 
-    def import_products(self, actor, upload, mapping_json=None):
+    def import_products(self, actor, upload, mapping_json=None, allow_over_limit=False):
         rows, _headers, mapping = self._load(upload, mapping_json)
-        errors, seen, duplicates, imported = [], set(), 0, 0
+        errors, seen, duplicates, imported, added_kg = [], set(), 0, 0, 0.0
+        can_set_cost = self.can(actor, P.PROFIT_VIEW)
         with self.transaction():
             for index, row in enumerate(rows, 1):
                 try:
@@ -157,7 +165,12 @@ class ProductImportService(Service):
                     if self.repos.products.sku_exists(values['sku']):
                         duplicates += 1
                         raise ValidationError(f"Duplicate Product ID already exists: {values['sku']}")
+                    if not can_set_cost:
+                        values['cost_price'] = 0.0
+                    if values['barcode'] and self.repos.products.barcode_owner(values['barcode']):
+                        raise ValidationError(f"Barcode {values['barcode']} is already used by another product")
                     product_id = self.repos.products.create({**values, 'created_at': self.now(), 'updated_at': self.now()})
+                    added_kg += opening * values['explosive_kg']
                     if opening:
                         self.repos.inventory.add_movement(product_id, 'OPENING', opening, self.now(), unit_cost=values['cost_price'],
                                                           ref_type='IMPORT', reason='Product master opening stock', user_id=actor['id'])
@@ -168,6 +181,7 @@ class ProductImportService(Service):
                 # Raising inside the transaction rolls back every row: imports are all-or-nothing.
                 raise ValidationError(f'Product Master validation failed for {len(errors)} row(s).', ok=False, total_rows=len(rows),
                                       imported=0, failed_rows=len(errors), duplicate_rows=duplicates, validation_errors=errors)
+            self.services.inventory.check_storage(actor, added_kg, allow_over_limit)
             self.audit(actor, 'Product master imported', 'PRODUCT', None, new={'rows': imported, 'added': imported, 'updated': 0})
         return {'ok': True, 'total_rows': len(rows), 'imported': imported, 'added': imported, 'updated': 0,
                 'failed_rows': 0, 'duplicate_rows': duplicates, 'validation_errors': []}
