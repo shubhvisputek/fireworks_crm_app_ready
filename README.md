@@ -1,61 +1,64 @@
 # Fireworks Business CRM
 
-A self-contained local web application implementing the supplied Firecracker Business CRM/Billing/Inventory/Analytics specification.
+Billing, inventory, expenses and sales analytics for a fireworks shop. It runs as a small local web app (or one shared hosted instance) and works in any browser on a computer, tablet or phone.
 
 ## Stack
 
-- Python 3.10+ standard library HTTP server
-- SQLite with transactional updates and WAL mode
-- HTML/CSS/JavaScript responsive UI
-- `openpyxl` for Excel import/export
-- `reportlab` for printable PDF invoices
+- Python 3.10+ standard-library HTTP server, SQLite (WAL mode, explicit transactions)
+- `openpyxl` (Excel import/export), `reportlab` (PDF invoices and reports), `defusedxml` (safe spreadsheet parsing)
+- Plain HTML/CSS and JavaScript ES modules. No framework and no build step.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for how the code is organised and how to add a feature.
 
 ## Run
 
 ```bash
-cd fireworks_crm
+pip install -r requirements.txt
 python server.py
 ```
 
-Open `http://localhost:8000`.
+Open `http://localhost:8000` and sign in as `admin` / `admin123`, then change the password with the **Password** button.
 
-By default the server only listens on this computer (`127.0.0.1`). To reach it from other devices on your network, set `HOST=0.0.0.0` and also set `FIREWORKS_ADMIN_PASSWORD` (at least 12 characters) before the first run; the server refuses to start a network-exposed database with the demo password.
+- The database is created automatically at `data/fireworks.db`. Set `FIREWORKS_SEED_DEMO=1` on the first run to load sample products, customers and bills for testing.
+- By default the server only listens on this computer (`127.0.0.1`). To use it from other devices on your Wi-Fi, set `HOST=0.0.0.0` and `FIREWORKS_ADMIN_PASSWORD` (12+ characters). The server refuses to go on the network while any account still uses the demo password.
+- On Windows, double-click `start_network.bat` to do this for you. On first run it asks for the admin password, then shows the address to open on phones and other computers (for example `http://192.168.1.25:8000`). Allow Python through Windows Firewall on **private** networks only, and use it only on your own password-protected Wi-Fi.
+- For one shared online instance, see [DEPLOYMENT.md](DEPLOYMENT.md).
 
-On Windows, double-click `start_network.bat` to do this for you. On first run it asks for the admin password, then shows the address to open on phones and other computers on the same Wi-Fi (for example `http://192.168.1.25:8000`). Allow Python through Windows Firewall on private networks only, keep the window open while the shop is using the CRM, and use it only on your own password-protected Wi-Fi.
+| Environment variable | Default | Purpose |
+|---|---|---|
+| `HOST`, `PORT` | `127.0.0.1`, `8000` | Where the server listens |
+| `FIREWORKS_DATA_DIR` | `./data` | Folder for the database and session key |
+| `FIREWORKS_DB`, `FIREWORKS_SECRET` | inside the data folder | Override individual file paths |
+| `FIREWORKS_ADMIN_PASSWORD` | – | Password for the first `admin` account (12+ characters) |
+| `FIREWORKS_REQUIRE_ADMIN_PASSWORD` | off | `1` refuses to create a database without the password above |
+| `FIREWORKS_TIMEZONE` | `Asia/Kolkata` | Business day used for bill and report dates |
+| `FIREWORKS_SECURE_COOKIES` | off | `1` when served over HTTPS |
+| `FIREWORKS_SEED_DEMO` | off | `1` loads demo data into an empty database |
 
-For one shared online instance that both computers can use, see [DEPLOYMENT.md](DEPLOYMENT.md). The hosted setup requires a persistent disk and starts with an empty database.
+## Features
 
-Demo login:
+- **Billing:** search by Product ID or name (Enter or a barcode scanner adds the exact match), quantities, bill discount (5/10/15% or an amount), hold and resume bills, split payments including Credit, and a printable PDF with customer and seller copies.
+- **Edit bills (administrator):** add or remove items and change quantities. The original bill is kept as cancelled and linked to the re-issued bill, with editor, time and reason recorded.
+- **Billed by / Edited by:** shown on every invoice PDF, the Sales list and Excel exports.
+- **Sales:** collect outstanding credit, return items (stock goes back), void bills, and view cancelled and edited bills.
+- **Products:** one-time CSV/Excel product master import with column mapping, preview and all-or-nothing validation. Add products, set the cost price used for profit reports, remove or archive products.
+- **Inventory:** purchases/GRN (updates the cost price), stock adjustments, stock removal, per-product stock ledger, low-stock alerts.
+- **Customers:** customer master. Customers are also created automatically from a name or mobile number typed on a bill.
+- **Expenses** and recurring expense templates; **dashboard** and **analytics** (sales, gross profit after cost of goods, net profit after expenses, top/bottom products, payment mix, presets including the configured season).
+- **Settings**, sales targets, invoice prefix and footer; audit log of every change.
+- **Users and permissions:** administrators manage staff accounts. Staff can use Dashboard, Billing, Expenses, Analytics and Backup & Export, and change their own password. The server enforces every permission, not just the menu.
+- **Backups and exports:** JSON backup (no password hashes), summary and detailed Excel, PDF sales report. Files are generated on demand and never left on the server.
 
-- Username: `admin`
-- Password: `admin123`
+## Tests
 
-The database is created automatically at `data/fireworks.db` and demo data is seeded the first time the app runs. Demo data is clearly intended for testing.
+```bash
+./run_tests.sh
+```
 
-## Main workflows included
+This runs the API, business-rule and database-upgrade tests (Python), the frontend unit tests (Node), and a full browser test of every screen (Playwright, skipped if not installed).
 
-- One-time CSV/XLSX Product Master import with column mapping, preview, duplicate rejection, and row-level validation
-- Product catalogue based on Product ID, name, category, subcategory, brand, unit, default unit selling price, opening stock, and status
-- Billing based on quantity × selling unit price, with transaction-only manual price overrides
-- Atomic finalized-sale transaction covering invoice, line snapshots, payment allocation and unit-for-unit stock deduction
-- Stock-in, stock adjustments, inventory ledger, and safe product removal
-- Customer master with automatic creation from manual billing details
-- Returns linked to original invoice
-- Edit finalized bills (Owner): add/remove items or change quantities; the original is kept as cancelled and linked to the re-issued bill, with editor, timestamp and reason recorded
-- "Billed by" on every invoice PDF, the Sales list and Excel exports, plus "Edited by" with date/time for revised bills
-- Expense entry and P&L calculations
-- Owner dashboard with refill attention and dedicated Sales Analytics page with top/bottom product views
-- Sales targets and progress
-- PDF invoices with separate customer and seller copies, plus Excel/JSON export
-- Settings and audit trail
-- Admin-managed staff accounts restricted to Dashboard, Billing, Expenses, Analytics, and Backup & Export
-- Collapsible left-side navigation with a mobile drawer
-- Responsive/PWA-ready front end
+## Production notes
 
-Administrators can create and deactivate staff accounts from the Users menu. Staff permissions are enforced by the server API as well as the navigation.
-
-## Important production notes
-
-This implementation is designed to be runnable immediately without an external package registry. Before using for real financial operations, change the default credentials and deploy behind HTTPS with a proper production process manager/reverse proxy. Product Master prices are final customer-facing unit prices; no tax is calculated or displayed. At invoice finalization, payment allocations must equal the discounted invoice total. Allocations can be recorded as received payment or marked Credit; Credit counts toward sales but is shown separately from money received as the invoice's outstanding amount. Credit is a payment method only; there is no separate credit-management module.
-
-Generated invoice PDFs are stored in the project `bills/` folder. Sales exports and backups are generated on demand and downloaded; they are not kept on the server. Backups do not include password hashes.
+- Prices in the product master are final customer-facing unit prices. No tax is calculated or shown.
+- At finalisation, payments must add up to the bill total after discount. Credit counts as sales and is tracked as the bill's outstanding amount until collected.
+- Serve over HTTPS when hosted (`FIREWORKS_SECURE_COOKIES=1`), keep one instance per database (SQLite), and download regular backups. The JSON backup has no restore screen yet.

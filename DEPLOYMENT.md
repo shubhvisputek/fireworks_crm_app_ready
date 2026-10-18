@@ -1,6 +1,6 @@
 # Shared Online Deployment
 
-The Render Blueprint in `render.yaml` runs one CRM web service with a persistent disk for SQLite, session signing, bills, and exports. Both computers use the same hosted URL and database. Keep the service at one instance; Render disks are attached to a single instance and SQLite is not a multi-instance database.
+The Render Blueprint in `render.yaml` runs one CRM web service with a persistent disk for the SQLite database and the session-signing key. Invoice PDFs, exports and backups are generated on demand and not stored. Both computers use the same hosted URL and database. Keep the service at one instance; Render disks are attached to a single instance and SQLite is not a multi-instance database.
 
 ## Deploy
 
