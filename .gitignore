@@ -8,10 +8,11 @@ __pycache__/
 .vscode/
 .github/
 .mcp.json
-bills/
-exports/
+# Folders the app writes into, at the project root only (a bare "exports/" also matched the crm/exports source code).
+/bills/
+/exports/
 # Everything the app writes: the database (and its -wal/-shm files), session key and backups.
-data/
+/data/
 *.db
 *.db-wal
 *.db-shm
