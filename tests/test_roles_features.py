@@ -1,5 +1,6 @@
 """Roles, per-user data limits, and the operational features (approvals, cash closing, suppliers, backups...)."""
 import itertools
+import time
 import unittest
 
 from tests.support import ServerProcess
@@ -189,6 +190,22 @@ class RoleMatrixTests(RoleTestCase):
         inv = self.owner.get(f"/api/invoices/{sale['invoice_id']}").json()['invoice']
         self.assertEqual(inv['billed_by_name'], 'Cashier One')
 
+    def test_staff_name_only_on_the_seller_copy(self):
+        """The customer copy and the 80 mm receipt go to the customer: no staff names on them."""
+        pid = self.product()
+        invoice_id = self.sell(self.cashier, pid).json()['invoice_id']
+        pdf = self.owner.get(f'/api/invoice-pdf/{invoice_id}').body
+        self.assertEqual(pdf.count(b'Billed by: Cashier One'), 1, 'once: on the seller copy only')
+        self.assertIn(b'CUSTOMER COPY', pdf)
+        receipt = self.owner.get(f'/api/invoice-receipt/{invoice_id}').body
+        self.assertNotIn(b'Cashier One', receipt)
+        # An edited bill: who edited it is shown on the seller copy only.
+        edited = self.owner.post(f'/api/invoices/{invoice_id}/edit', {'items': [{'product_id': pid, 'qty': 2}], 'reason': 'one more box',
+                                                                      'payments': [{'mode': 'Cash', 'amount': 200}]}).json()
+        pdf = self.owner.get(f"/api/invoice-pdf/{edited['invoice_id']}").body
+        self.assertEqual(pdf.count(b'edited by'), 1)
+        self.assertEqual(pdf.count(b'Revised from'), 2)
+
 
 class DiscountApprovalTests(RoleTestCase):
     def test_large_discount_needs_manager(self):
@@ -231,6 +248,38 @@ class CashClosingTests(RoleTestCase):
         self.assertIn('Cashier One', [c['user_name'] for c in self.manager.get('/api/cash-closings').json()])
         self.assertEqual(self.cashier2.get('/api/cash-closings').json(), [])
 
+
+    def test_deleted_and_edited_bills_leave_the_drawer(self):
+        drawer = self.user('drawer3', 'CASHIER')
+        summary = lambda: drawer.get('/api/cash-closing/summary').json()
+        pid = self.product(price=100)
+        kept = self.sell(drawer, pid).json()['invoice_id']
+        deleted = self.sell(drawer, pid).json()['invoice_id']
+        upi = self.sell(drawer, pid, payments=[{'mode': 'UPI', 'amount': 100}]).json()['invoice_id']
+        self.assertEqual(summary()['expected_cash'], 200)
+        self.assertEqual(self.owner.post(f'/api/invoices/{deleted}/void', {}).status, 200)
+        self.assertEqual(self.owner.post(f'/api/invoices/{upi}/void', {}).status, 200)
+        now = summary()
+        self.assertEqual((now['expected_cash'], now['bills'], now['modes']), (100, 1, [{'mode': 'Cash', 'amount': 100, 'bills': 1}]),
+                         'a bill deleted before closing is not counted at all')
+        self.assertEqual(now['deleted_cash'], 0)
+        # Editing a bill to 2 boxes re-issues it: only the new bill's payment counts.
+        edit = self.owner.post(f'/api/invoices/{kept}/edit', {'items': [{'product_id': pid, 'qty': 2}], 'reason': 'customer took one more',
+                                                               'payments': [{'mode': 'Cash', 'amount': 200}]})
+        self.assertEqual(edit.status, 200, edit.body)
+        self.assertEqual((summary()['bills'], summary()['expected_cash']), (0, 0),
+                         'the old bill left this drawer; the owner made the edit, so the new payment is in the owner\'s drawer')
+        # A bill paid before the closing and deleted after it: the cash goes back out of this drawer now.
+        paid = self.sell(drawer, pid).json()['invoice_id']
+        self.assertEqual(drawer.post('/api/cash-closing', {'counted_cash': 100}).json()['difference'], 0)
+        time.sleep(1.1)  # times are stored to the second; the delete must come after the closing
+        self.owner.post(f'/api/invoices/{paid}/void', {})
+        after = summary()
+        self.assertEqual((after['deleted_cash'], after['expected_cash'], after['modes']), (100, -100, []))
+        self.sell(drawer, pid, qty=3)  # the day goes on: 300 taken, 100 of it already handed back
+        self.assertEqual(summary()['expected_cash'], 200)
+        self.assertEqual(drawer.post('/api/cash-closing', {'counted_cash': 200}).json()['difference'], 0)
+        self.assertEqual(summary()['deleted_cash'], 0, 'counted once, in the period it was deleted')
 
 class AuditAndDuesTests(RoleTestCase):
     def test_audit_log(self):

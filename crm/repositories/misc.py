@@ -142,11 +142,21 @@ class CashClosingRepository(Repository):
                             JOIN users u ON u.id=c.user_id {own} ORDER BY c.closed_at DESC, c.id DESC LIMIT ?''', params)
 
     def payments_by_mode(self, user_id, since, until):
-        """Money this user took on bills (excluding Credit), by payment mode, in a time window."""
+        """Money this user took on bills (excluding Credit), by payment mode, in a time window.
+        Bills deleted (or replaced by an edit) are left out: that money went back to the customer."""
         return self.all('''SELECT p.mode, ROUND(SUM(p.amount), 2) AS amount, COUNT(DISTINCT p.invoice_id) AS bills
                            FROM payments p JOIN invoices i ON i.id=p.invoice_id
                            WHERE p.user_id=? AND p.created_at>? AND p.created_at<=? AND upper(p.mode)<>'CREDIT'
+                                 AND i.status<>'VOID'
                            GROUP BY p.mode ORDER BY p.mode''', (user_id, since, until))
+
+    def voided_earlier_payments(self, user_id, since, until):
+        """Payments this user took before the window on bills deleted inside it: handed back now, by mode."""
+        return self.all('''SELECT p.mode, ROUND(SUM(p.amount), 2) AS amount, COUNT(DISTINCT p.invoice_id) AS bills
+                           FROM payments p JOIN invoices i ON i.id=p.invoice_id
+                           WHERE p.user_id=? AND p.created_at<=? AND i.status='VOID' AND i.voided_at>? AND i.voided_at<=?
+                                 AND upper(p.mode)<>'CREDIT'
+                           GROUP BY p.mode ORDER BY p.mode''', (user_id, since, since, until))
 
     def refunds(self, user_id, since, until):
         return self.scalar('SELECT COALESCE(SUM(total_refund), 0) FROM returns WHERE user_id=? AND created_at>? AND created_at<=?',
