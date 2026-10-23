@@ -36,6 +36,8 @@ class HeldBillService(Service):
             raise ValidationError('Add products before holding a bill.')
         ref = f"HOLD-{self.clock.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3).upper()}"
         with self.transaction():
+            if data.get('replaces'):
+                self.release(actor, data['replaces'])  # holding a resumed bill again replaces its old copy (by its ref)
             held_id = self.repos.held_bills.create({
                 'ref': ref, 'customer_id': data.get('customer_id') or None, 'customer_name': v.optional_text(data.get('customer_name'), 200),
                 'pricing_mode': v.text(data.get('pricing_mode'), 20) or 'STANDARD', 'items_json': encode(data),
@@ -68,6 +70,15 @@ class HeldBillService(Service):
             self.repos.held_bills.delete(held_id)
             self.audit(actor, 'Held bill resumed', 'HELD_BILL', held_id)
         return {'ok': True, 'bill': row, **decode(row['items_json'])}
+
+    def release(self, actor, ref):
+        """Remove a held bill that has been finished (or held again), found by its unique ref: row ids can be reused
+        after a delete, a ref never is. Quietly does nothing if it is gone or belongs to someone this user can't see."""
+        row = self.repos.held_bills.get_by_ref(str(ref or ''))
+        if not row or (not self._sees_all(actor) and row['user_id'] != actor['id']):
+            return
+        self.repos.held_bills.delete(row['id'])
+        self.audit(actor, 'Held bill completed', 'HELD_BILL', row['id'])
 
     def delete(self, actor, held_id):
         with self.transaction():

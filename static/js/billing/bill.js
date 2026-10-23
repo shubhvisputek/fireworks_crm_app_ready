@@ -8,10 +8,11 @@ export const bill = {
   customerName: '',
   customerPhone: '',
   editing: null, // {id, number, customerId, customerName, customerPhone, payments, notes} when re-issuing a bill
+  heldRef: null, // the held bill this one was resumed from
 };
 
 export function resetBill() {
-  Object.assign(bill, { items: [], discount: 0, customerName: '', customerPhone: '', editing: null });
+  Object.assign(bill, { items: [], discount: 0, customerName: '', customerPhone: '', editing: null, heldRef: null });
 }
 
 export const billTotals = () => calculate(bill.items, bill.discount, findProduct);
@@ -23,8 +24,11 @@ export function addProduct(productId) {
   bill.items.unshift(item); // newest at the top, next to the search box
 }
 
+// The held bill stays saved while it is on the counter, and is removed when this bill is finished or held again,
+// so closing the browser or signing out never loses it.
 export function loadHeldBill(held) {
   resetBill();
+  bill.heldRef = held.bill?.ref || null;
   bill.items = (held.items || []).map((item) => ({ product_id: Number(item.product_id), qty: Number(item.qty) }));
   bill.discount = Number(held.discount || 0);
   bill.customerName = held.bill?.customer_name || '';
@@ -57,5 +61,6 @@ export function billPayload(payments, notes) {
     discount: billTotals().discount,
     payments,
     notes,
+    held_ref: bill.heldRef || undefined,
   };
 }

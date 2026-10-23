@@ -23,8 +23,8 @@ PRESETS = ('today', 'yesterday', '7d', 'month', 'season')
 
 class ReportService(Service):
     def sales_kpis(self, start, end):
-        totals = self.repos.reports.sales_totals(start, end)
-        cogs = self.repos.reports.cost_of_goods(start, end)
+        totals = self.repos.insights.totals(start, end)  # net of returns, like the analytics views
+        cogs = totals['cogs']
         profit = totals['sales'] - cogs
         margin = (profit / totals['sales'] * 100) if totals['sales'] else 0
         return {'sales': money(totals['sales']), 'bills': totals['bills'], 'avg_bill': money(totals['avg_bill']),

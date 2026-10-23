@@ -5,16 +5,6 @@ FINALIZED_IN_RANGE = "i.invoice_date BETWEEN ? AND ? AND i.status='FINALIZED'"
 
 
 class ReportRepository(Repository):
-    def sales_totals(self, start, end):
-        return self.one(f'''SELECT COALESCE(SUM(grand_total), 0) AS sales, COUNT(*) AS bills, COALESCE(AVG(grand_total), 0) AS avg_bill,
-                                   COALESCE(SUM(discount), 0) AS discounts, COALESCE(SUM(amount_received), 0) AS received,
-                                   COALESCE(SUM(outstanding), 0) AS credit
-                            FROM invoices i WHERE {FINALIZED_IN_RANGE}''', (start, end))
-
-    def cost_of_goods(self, start, end):
-        return self.scalar(f'''SELECT COALESCE(SUM(ii.cost_snapshot * ii.qty_input), 0)
-                               FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id WHERE {FINALIZED_IN_RANGE}''', (start, end), default=0)
-
     def hourly(self, start, end):
         return self.all(f'''SELECT substr(i.finalized_at, 12, 2) AS hr, ROUND(SUM(i.grand_total), 2) AS sales, COUNT(*) AS bills,
                                    ROUND(AVG(i.grand_total), 2) AS avg_bill

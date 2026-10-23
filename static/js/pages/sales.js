@@ -31,12 +31,15 @@ function actions(x) {
   const receipt = can('invoices.print') ? html`<button class="button" data-action="sales.receipt" data-id="${x.id}">Receipt (80 mm)</button>` : '';
   const share = WHATSAPP_ENABLED && x.customer_phone ? html`<button class="button" data-action="sales.whatsapp" data-id="${x.id}" title="Send bill on WhatsApp">WhatsApp</button>` : '';
   const finalized = x.status === 'FINALIZED';
+  // A bill with returns can't be edited or deleted (the returned goods are already back in stock).
+  const returned = x.returned_amount > 0;
+  const fullyReturned = returned && x.returned_amount >= x.grand_total - 0.01;
   const more = [receipt, share,
-    finalized && can('returns.create') ? html`<button class="button" data-action="sales.return" data-id="${x.id}">Return items</button>` : '',
-    finalized && can('sales.void') ? html`<button class="button danger" data-action="sales.void" data-id="${x.id}" data-number="${x.invoice_number}">Delete</button>` : '',
+    finalized && !fullyReturned && can('returns.create') ? html`<button class="button" data-action="sales.return" data-id="${x.id}">Return items</button>` : '',
+    finalized && !returned && can('sales.void') ? html`<button class="button danger" data-action="sales.void" data-id="${x.id}" data-number="${x.invoice_number}">Delete</button>` : '',
   ].filter(Boolean);
   return html`${pdf}
-    ${finalized && can('sales.edit') ? html`<button class="button" data-action="sales.edit" data-id="${x.id}">Edit</button>` : ''}
+    ${finalized && !returned && can('sales.edit') ? html`<button class="button" data-action="sales.edit" data-id="${x.id}">Edit</button>` : ''}
     ${finalized && x.outstanding > 0 && can('payments.collect') ? html`<button class="button" data-action="sales.collect" data-id="${x.id}">Collect</button>` : ''}
     ${more.length ? html`<details class="menu"><summary class="button" aria-label="More actions">More ▾</summary><div class="menu-items">${more}</div></details>` : ''}`;
 }
@@ -46,7 +49,8 @@ async function render() {
   const rows = invoices.map((x) => html`<tr>
     <td><strong>${x.invoice_number}</strong>${history(x)}</td><td>${x.invoice_date}</td><td>${x.customer_name_snapshot}</td>
     <td>${x.billed_by_name || '-'}<div class="small muted">${dateTime(x.created_at)}</div></td>
-    <td>${money(x.grand_total)}</td><td>${money(x.amount_received)}${x.outstanding > 0 ? html`<div class="small muted">Due ${money(x.outstanding)}</div>` : ''}</td>
+    <td>${money(x.grand_total)}${x.returned_amount > 0 ? html`<div class="small"><span class="tag warn">Returned ${money(x.returned_amount)}</span></div>` : ''}</td>
+    <td>${money(x.amount_received)}${x.outstanding > 0 ? html`<div class="small muted">Due ${money(x.outstanding)}</div>` : ''}</td>
     <td><div class="row">${actions(x)}</div></td></tr>`);
   setHtml($('#page'), html`<div class="card"><div class="between"><div><h3>Invoices</h3>
       <div class="small muted">${can('sales.view') ? 'All bills.' : 'Bills you made.'} Edit re-issues a bill with a new number and keeps the original as cancelled.</div></div>
@@ -104,10 +108,15 @@ registerActions({
     const { invoice, items } = await api.get(`/api/invoices/${el.dataset.id}`);
     openModal('Sales Return', html`<p>${invoice.invoice_number} • ${invoice.customer_name_snapshot}</p>
       <form data-submit="sales.saveReturn"><input type="hidden" name="invoice_id" value="${invoice.id}">
-        ${items.map((item) => html`<div class="between notice" style="margin-bottom:6px"><span>${item.product_name_snapshot}
-          <div class="small muted">Sold ${num(item.qty_input)} ${item.sell_unit}</div></span>
+        ${invoice.outstanding > 0 ? html`<p class="notice warn small">The customer still owes ${money(invoice.outstanding)} on this bill:
+          returned goods come off that first, and only the rest is paid back.</p>` : ''}
+        ${items.map((item) => {
+          const left = Math.max(0, item.qty_input - (item.returned_qty || 0));
+          return html`<div class="between notice" style="margin-bottom:6px"><span>${item.product_name_snapshot}
+          <div class="small muted">Sold ${num(item.qty_input)} ${item.sell_unit}${item.returned_qty ? ` • already returned ${num(item.returned_qty)} • ${num(left)} left` : ''}</div></span>
           <input class="input return-qty" aria-label="Return quantity for ${item.product_name_snapshot}" data-item="${item.id}" style="width:100px"
-            type="number" min="0" max="${item.qty_input}" step="0.01" value="0"></div>`)}
+            type="number" min="0" max="${left}" step="0.01" value="0" ${left ? '' : html`disabled`}></div>`;
+        })}
         <label>Reason<textarea class="textarea" name="reason"></textarea></label><br>
         <button class="button primary">Process Return</button></form>`);
   },
@@ -116,7 +125,10 @@ registerActions({
     const result = await api.post('/api/returns', { invoice_id: Number(form.elements.invoice_id.value), reason: form.elements.reason.value, items });
     closeModal();
     await loadReferenceData();
-    toast(`Return ${result.return_number} posted — refund ${money(result.refund)}`);
+    const settled = result.credit_adjusted
+      ? `${money(result.credit_adjusted)} taken off what the customer owes${result.paid_back ? `, pay back ${money(result.paid_back)}` : ''}`
+      : `pay back ${money(result.paid_back)}`;
+    toast(`Return ${result.return_number} posted (${money(result.refund)}): ${settled}`);
     render();
   },
 });

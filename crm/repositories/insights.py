@@ -19,7 +19,38 @@ def _scope(start, end, user_id, alias='i'):
     return sql, params
 
 
+CATEGORY_SQL = "COALESCE(NULLIF(p.category, ''), 'Uncategorised')"
+
+
 class InsightRepository(Repository):
+    # ---- returns -----------------------------------------------------------
+    def returned(self, start, end, user_id=None, group=None, extra=''):
+        """Goods returned in the period (counted on the day of the return), on bills in scope: refunded value,
+        quantity and what they cost. Sales figures subtract these so a return undoes its sale."""
+        where, params = "r.return_date BETWEEN ? AND ? AND r.status='POSTED'", [start, end]
+        if user_id is not None:
+            where += ' AND i.user_id=?'
+            params.append(user_id)
+        key = f'{group} AS key, {extra}' if group else ''
+        return self.all(f'''SELECT {key} COALESCE(SUM(ri.refund_amount), 0) AS amount, COALESCE(SUM(ri.qty_input), 0) AS qty,
+                                   COALESCE(SUM(ri.qty_input * ii.cost_snapshot), 0) AS cogs
+                            FROM return_items ri JOIN returns r ON r.id=ri.return_id JOIN invoice_items ii ON ii.id=ri.invoice_item_id
+                            JOIN invoices i ON i.id=r.invoice_id LEFT JOIN products p ON p.id=ii.product_id
+                            WHERE {where}{' GROUP BY 1' if group else ''}''', params)
+
+    @staticmethod
+    def _net(rows, returned, key, fields, blank):
+        """Subtract returned amounts from grouped sales rows (adding a row for a group that only had returns)."""
+        by_key = {row[key]: row for row in rows}
+        for ret in returned:
+            row = by_key.get(ret['key'])
+            if row is None:
+                row = by_key[ret['key']] = {key: ret['key'], **blank(ret)}
+                rows.append(row)
+            for field, value in fields(ret).items():
+                row[field] = round((row.get(field) or 0) - value, 2)
+        return rows
+
     # ---- sales -------------------------------------------------------------
     def totals(self, start, end, user_id=None):
         where, params = _scope(start, end, user_id)
@@ -31,14 +62,23 @@ class InsightRepository(Repository):
                                       JOIN invoices i ON i.id=ii.invoice_id WHERE {where}''', params, default=0)
         row['items'] = self.scalar(f'''SELECT COALESCE(SUM(ii.qty_input), 0) FROM invoice_items ii
                                        JOIN invoices i ON i.id=ii.invoice_id WHERE {where}''', params, default=0)
+        ret = self.returned(start, end, user_id)[0]
+        row['returns'] = round(ret['amount'], 2)
+        row['sales'] -= ret['amount']
+        row['cogs'] -= ret['cogs']
+        row['items'] -= ret['qty']
+        row['avg_bill'] = row['sales'] / row['bills'] if row['bills'] else 0
         return row
 
     def daily(self, start, end, user_id=None):
         where, params = _scope(start, end, user_id)
-        return self.all(f'''SELECT i.invoice_date AS day, ROUND(SUM(i.grand_total), 2) AS sales, COUNT(*) AS bills,
+        rows = self.all(f'''SELECT i.invoice_date AS day, ROUND(SUM(i.grand_total), 2) AS sales, COUNT(*) AS bills,
                                    ROUND(COALESCE(SUM((SELECT SUM(ii.cost_snapshot * ii.qty_input) FROM invoice_items ii
                                                        WHERE ii.invoice_id=i.id)), 0), 2) AS cogs
                             FROM invoices i WHERE {where} GROUP BY i.invoice_date ORDER BY i.invoice_date''', params)
+        rows = self._net(rows, self.returned(start, end, user_id, 'r.return_date'), 'day',
+                         lambda r: {'sales': r['amount'], 'cogs': r['cogs']}, lambda r: {'sales': 0, 'bills': 0, 'cogs': 0})
+        return sorted(rows, key=lambda row: row['day'])
 
     def weekday_hour(self, start, end, user_id=None):
         """Sales by weekday (0 = Sunday) and hour of finalisation."""
@@ -67,20 +107,29 @@ class InsightRepository(Repository):
     # ---- products ----------------------------------------------------------
     def products(self, start, end, user_id=None):
         where, params = _scope(start, end, user_id)
-        return self.all(f'''SELECT ii.product_id, ii.product_name_snapshot AS name, ii.sku_snapshot AS sku,
-                                   COALESCE(NULLIF(p.category, ''), 'Uncategorised') AS category,
+        rows = self.all(f'''SELECT ii.product_id, ii.product_name_snapshot AS name, ii.sku_snapshot AS sku,
+                                   {CATEGORY_SQL} AS category,
                                    ROUND(SUM(ii.qty_input), 2) AS qty, ROUND(SUM(ii.taxable_amount), 2) AS revenue,
                                    ROUND(SUM(ii.taxable_amount - ii.cost_snapshot * ii.qty_input), 2) AS profit,
                                    COUNT(DISTINCT i.id) AS bills
                             FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id LEFT JOIN products p ON p.id=ii.product_id
                             WHERE {where} GROUP BY ii.product_id ORDER BY revenue DESC''', params)
+        returned = self.returned(start, end, user_id, 'ii.product_id',
+                                 f'MAX(ii.product_name_snapshot) AS name, MAX(ii.sku_snapshot) AS sku, MAX({CATEGORY_SQL}) AS category,')
+        rows = self._net(rows, returned, 'product_id', lambda r: {'qty': r['qty'], 'revenue': r['amount'], 'profit': r['amount'] - r['cogs']},
+                         lambda r: {'name': r['name'], 'sku': r['sku'], 'category': r['category'], 'qty': 0, 'revenue': 0, 'profit': 0, 'bills': 0})
+        return sorted(rows, key=lambda row: row['revenue'], reverse=True)
 
     def categories(self, start, end, user_id=None):
         where, params = _scope(start, end, user_id)
-        return self.all(f'''SELECT COALESCE(NULLIF(p.category, ''), 'Uncategorised') AS category, ROUND(SUM(ii.taxable_amount), 2) AS revenue,
+        rows = self.all(f'''SELECT {CATEGORY_SQL} AS category, ROUND(SUM(ii.taxable_amount), 2) AS revenue,
                                    ROUND(SUM(ii.qty_input), 2) AS qty, ROUND(SUM(ii.taxable_amount - ii.cost_snapshot * ii.qty_input), 2) AS profit
                             FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id LEFT JOIN products p ON p.id=ii.product_id
                             WHERE {where} GROUP BY 1 ORDER BY revenue DESC''', params)
+        rows = self._net(rows, self.returned(start, end, user_id, CATEGORY_SQL), 'category',
+                         lambda r: {'qty': r['qty'], 'revenue': r['amount'], 'profit': r['amount'] - r['cogs']},
+                         lambda r: {'qty': 0, 'revenue': 0, 'profit': 0})
+        return sorted(rows, key=lambda row: row['revenue'], reverse=True)
 
     # ---- customers ---------------------------------------------------------
     def customer_types(self, start, end, user_id=None):

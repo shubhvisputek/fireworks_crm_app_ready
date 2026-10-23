@@ -189,8 +189,13 @@ def _m6_revoked_sessions(conn):
     conn.execute('CREATE TABLE IF NOT EXISTS revoked_sessions (sid TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)')
 
 
+def _m7_return_credit(conn):
+    """How much of a return was taken off the bill's unpaid credit instead of being paid back."""
+    _add_missing_columns(conn, 'returns', {'credit_adjusted': 'REAL NOT NULL DEFAULT 0'})
+
+
 MIGRATIONS = [(1, _m1_product_prices), (2, _m2_session_versions), (3, _m3_invoice_revisions), (4, _m4_indexes),
-              (5, _m5_roles_and_operations), (6, _m6_revoked_sessions)]
+              (5, _m5_roles_and_operations), (6, _m6_revoked_sessions), (7, _m7_return_credit)]
 
 DEFAULT_SETTINGS = {
     'business_name': 'Shree Ganesh Fireworks', 'address': 'Pune, Maharashtra, India', 'license_number': '',

@@ -263,14 +263,14 @@ try {
     await page.waitForSelector(`td:has-text("Revised from ${firstBill}")`);
   });
 
-  await step('sales: return an item, then void blocked', async () => {
+  await step('sales: return an item; the bill can then no longer be edited or deleted', async () => {
     await moreAction(page, `tr:has-text("${editedBill}")`, 'Return');
     await page.fill('#modal .return-qty', '1');
     await page.click('#modal button:has-text("Process Return")');
-    assert.match(await toastText(page), /Return RET-.* posted/);
-    await moreAction(page, `tr:has-text("${editedBill}")`, 'Delete');
-    await confirmDialog(page, /items go back into stock/);
-    assert.match(await toastText(page), /posted return/);
+    assert.match(await toastText(page), /Return RET-.* posted .*pay back/);
+    const row = page.locator(`tr:has-text("${editedBill}")`);
+    await row.locator('.tag:has-text("Returned")').waitFor();
+    assert.equal(await row.locator('button:has-text("Delete"), button:has-text("Edit")').count(), 0);
   });
 
   await step('expenses and recurring expense', async () => {

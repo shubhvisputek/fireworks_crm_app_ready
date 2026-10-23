@@ -298,6 +298,67 @@ class CashClosingTests(RoleTestCase):
         self.assertEqual(drawer.post('/api/cash-closing', {'counted_cash': 200}).json()['difference'], 0)
         self.assertEqual(summary()['deleted_cash'], 0, 'counted once, in the period it was deleted')
 
+
+class HeldBillAndReturnTests(RoleTestCase):
+    def test_resumed_held_bill_stays_until_billed_or_held_again(self):
+        pid = self.product(price=100)
+        held = self.cashier.post('/api/held-bills', {'items': [{'product_id': pid, 'qty': 2}], 'customer_name': 'Park'}).json()
+        peek = self.cashier.get(f"/api/held-bills/resume/{held['id']}").json()
+        self.assertEqual(peek['items'], [{'product_id': pid, 'qty': 2}])
+        mine = lambda: [h['ref'] for h in self.cashier.get('/api/held-bills').json()]
+        self.assertIn(held['ref'], mine(), 'resuming does not remove it: a closed browser must not lose the bill')
+        again = self.cashier.post('/api/held-bills', {'items': [{'product_id': pid, 'qty': 3}], 'replaces': held['ref']}).json()
+        self.assertNotIn(held['ref'], mine(), 'holding it again replaces the old copy')
+        self.assertIn(again['ref'], mine())
+        sale = self.sell(self.cashier, pid, qty=3, held_ref=again['ref'])
+        self.assertEqual(sale.status, 200, sale.body)
+        self.assertNotIn(again['ref'], mine(), 'billed, so it leaves Held Bills')
+        # Someone else's held bill is left alone, and an old ref never removes a newer bill.
+        other = self.cashier2.post('/api/held-bills', {'items': [{'product_id': pid, 'qty': 1}]}).json()
+        self.assertEqual(self.sell(self.cashier, pid, held_ref=other['ref']).status, 200)
+        self.assertEqual(self.sell(self.cashier2, pid, held_ref=held['ref']).status, 200)
+        self.assertIn(other['ref'], [h['ref'] for h in self.cashier2.get('/api/held-bills').json()])
+
+    def test_return_on_credit_bill_comes_off_what_is_owed(self):
+        pid = self.product(price=100)
+        sale = self.sell(self.cashier, pid, qty=4, payments=[{'mode': 'Cash', 'amount': 100}, {'mode': 'Credit', 'amount': 300}],
+                         customer_name='Owes Money', customer_phone='9876512345').json()
+        item = self.manager.get(f"/api/invoices/{sale['invoice_id']}").json()['items'][0]
+        refunds_before = self.manager.get('/api/cash-closing/summary').json()['refunds']
+        first = self.manager.post('/api/returns', {'invoice_id': sale['invoice_id'], 'items': [{'invoice_item_id': item['id'], 'qty': 2}]}).json()
+        self.assertEqual((first['refund'], first['credit_adjusted'], first['paid_back']), (200, 200, 0))
+        invoice = self.owner.get(f"/api/invoices/{sale['invoice_id']}").json()['invoice']
+        self.assertEqual((invoice['outstanding'], invoice['returned_amount']), (100, 200))
+        dues = next(c for c in self.owner.get('/api/dues').json()['customers'] if c['name'] == 'Owes Money')
+        self.assertEqual(dues['total_due'], 100)
+        second = self.manager.post('/api/returns', {'invoice_id': sale['invoice_id'], 'items': [{'invoice_item_id': item['id'], 'qty': 2}]}).json()
+        self.assertEqual((second['credit_adjusted'], second['paid_back']), (100, 100), 'the last 100 owed is cleared, the paid 100 goes back')
+        self.assertEqual(self.owner.get(f"/api/invoices/{sale['invoice_id']}").json()['invoice']['outstanding'], 0)
+        self.assertEqual(self.manager.get('/api/cash-closing/summary').json()['refunds'] - refunds_before, 100,
+                         'only money actually paid back leaves the drawer')
+        detail = self.manager.get(f"/api/invoices/{sale['invoice_id']}").json()
+        self.assertEqual(detail['items'][0]['returned_qty'], 4)
+
+    def test_returns_come_off_sales_and_profit(self):
+        seller = self.user('netseller', 'CASHIER')  # a fresh cashier, so their own figures hold only this bill
+        pid = self.product(price=100)  # cost price 60
+        kpi = lambda: self.owner.get('/api/insights?preset=today').json()['sales']['kpi']
+        sale = self.sell(seller, pid, qty=3).json()
+        before = kpi()
+        item = self.manager.get(f"/api/invoices/{sale['invoice_id']}").json()['items'][0]
+        self.manager.post('/api/returns', {'invoice_id': sale['invoice_id'], 'items': [{'invoice_item_id': item['id'], 'qty': 1}]})
+        after = kpi()
+        self.assertAlmostEqual(before['sales'] - after['sales'], 100)
+        self.assertAlmostEqual(before['cogs'] - after['cogs'], 60)
+        self.assertAlmostEqual(before['gross_profit'] - after['gross_profit'], 40)
+        self.assertAlmostEqual(before['items'] - after['items'], 1)
+        self.assertAlmostEqual(after['returns'] - before['returns'], 100)
+        self.assertAlmostEqual(self.owner.get('/api/dashboard').json()['today']['sales'], after['sales'], msg='dashboard and analytics agree')
+        own = seller.get('/api/insights?preset=today').json()
+        self.assertEqual((own['sales']['kpi']['sales'], own['sales']['kpi']['items']), (200, 2), "the seller's own figures net the return too")
+        self.assertEqual([(p['qty'], p['revenue']) for p in own['products']['top']], [(2, 200)])  # cashiers don't see profit
+        self.assertEqual(sum(day['sales'] for day in own['sales']['trend']), 200)
+
 class AuditAndDuesTests(RoleTestCase):
     def test_audit_log(self):
         pid = self.product()

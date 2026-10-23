@@ -4,7 +4,8 @@ from crm.repositories.base import Repository
 INVOICE_SELECT = '''
 SELECT i.*, COALESCE(ub.display_name, ub.username) AS billed_by_name, COALESCE(ue.display_name, ue.username) AS edited_by_name,
        COALESCE(uv.display_name, uv.username) AS voided_by_name, COALESCE(ua.display_name, ua.username) AS discount_approved_by_name,
-       rf.invoice_number AS revised_from_number, rt.invoice_number AS revised_to_number, c.phone AS customer_phone
+       rf.invoice_number AS revised_from_number, rt.invoice_number AS revised_to_number, c.phone AS customer_phone,
+       (SELECT COALESCE(ROUND(SUM(r.total_refund), 2), 0) FROM returns r WHERE r.invoice_id=i.id AND r.status='POSTED') AS returned_amount
 FROM invoices i
 LEFT JOIN users ub ON ub.id=i.user_id
 LEFT JOIN users ue ON ue.id=i.edited_by
@@ -43,6 +44,9 @@ class InvoiceRepository(Repository):
                      (old_id, reason, user_id, at, new_id))
         self.execute('UPDATE invoices SET revised_to_id=? WHERE id=?', (new_id, old_id))
 
+    def set_outstanding(self, invoice_id, outstanding):
+        self.execute('UPDATE invoices SET outstanding=? WHERE id=?', (outstanding, invoice_id))
+
     def apply_payment(self, invoice_id, amount, outstanding):
         self.execute('UPDATE invoices SET amount_received=amount_received+?, outstanding=? WHERE id=?', (amount, outstanding, invoice_id))
 
@@ -51,7 +55,9 @@ class InvoiceRepository(Repository):
         return self.insert('invoice_items', values)
 
     def items(self, invoice_id):
-        return self.all('SELECT * FROM invoice_items WHERE invoice_id=? ORDER BY id', (invoice_id,))
+        return self.all('''SELECT ii.*, (SELECT COALESCE(SUM(ri.qty_input), 0) FROM return_items ri JOIN returns r ON r.id=ri.return_id
+                                         WHERE ri.invoice_item_id=ii.id AND r.status='POSTED') AS returned_qty
+                           FROM invoice_items ii WHERE ii.invoice_id=? ORDER BY ii.id''', (invoice_id,))
 
     def item(self, item_id, invoice_id):
         return self.one('SELECT * FROM invoice_items WHERE id=? AND invoice_id=?', (item_id, invoice_id))
