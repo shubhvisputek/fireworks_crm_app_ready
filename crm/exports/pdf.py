@@ -33,6 +33,12 @@ def fit_text(text, font, size, max_width):
     return text + '...' if text else ''
 
 
+def money_paid(payments):
+    """Payments the customer actually made. A 'Credit' entry is the part left to pay later (shown as credit due),
+    so listing it as paid would add up to more than the bill once the credit is collected."""
+    return [p for p in payments if str(p['mode']).upper() != 'CREDIT']
+
+
 class InvoicePdf:
     """Two identical copies per page; long bills continue on further pages."""
 
@@ -109,7 +115,7 @@ class InvoicePdf:
             c.drawString(x + 34 * mm, y, label)
             c.drawRightString(x + COLUMN_W, y, f'Rs. {value:,.2f}')
             y -= 5 * mm
-        paid = ', '.join(f"{p['mode']} Rs. {p['amount']:,.2f}" for p in self.payments) or 'No payment recorded'
+        paid = ', '.join(f"{p['mode']} Rs. {p['amount']:,.2f}" for p in money_paid(self.payments)) or 'No payment yet'
         self._line(x, y - 2 * mm, 'Payment(s): ' + paid)
         self._line(x, y - 8 * mm, self.settings.get('invoice_footer', 'Thank you.'))
 
@@ -169,6 +175,7 @@ RECEIPT_TEXT_W = RECEIPT_W - 2 * RECEIPT_MARGIN
 
 def receipt_pdf(invoice, items, payments, settings):
     """80 mm thermal-printer receipt; the page is exactly as long as the content."""
+    payments = money_paid(payments)
     line = 3.8 * mm
     totals = [('Subtotal', invoice['subtotal']), ('Discount', invoice['discount']), ('TOTAL', invoice['grand_total']),
               ('Received', invoice['amount_received'])] + ([('Credit due', invoice['outstanding'])] if invoice['outstanding'] > 0 else [])

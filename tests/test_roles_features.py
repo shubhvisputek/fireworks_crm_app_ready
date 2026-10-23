@@ -3,7 +3,7 @@ import itertools
 import time
 import unittest
 
-from tests.support import ServerProcess
+from tests.support import ServerProcess, pdf_text
 
 _n = itertools.count(1)
 PROFIT_KEYS = {'gross_profit', 'gross_margin', 'cogs', 'net_profit', 'inventory_cost', 'cost_price', 'profit', 'cost'}
@@ -197,14 +197,31 @@ class RoleMatrixTests(RoleTestCase):
         pdf = self.owner.get(f'/api/invoice-pdf/{invoice_id}').body
         self.assertEqual(pdf.count(b'Billed by: Cashier One'), 1, 'once: on the seller copy only')
         self.assertIn(b'CUSTOMER COPY', pdf)
-        receipt = self.owner.get(f'/api/invoice-receipt/{invoice_id}').body
-        self.assertNotIn(b'Cashier One', receipt)
+        receipt = pdf_text(self.owner.get(f'/api/invoice-receipt/{invoice_id}').body)
+        self.assertIn('Bill: ', receipt, 'the receipt text can be read')
+        self.assertNotIn('Cashier One', receipt)
         # An edited bill: who edited it is shown on the seller copy only.
         edited = self.owner.post(f'/api/invoices/{invoice_id}/edit', {'items': [{'product_id': pid, 'qty': 2}], 'reason': 'one more box',
                                                                       'payments': [{'mode': 'Cash', 'amount': 200}]}).json()
         pdf = self.owner.get(f"/api/invoice-pdf/{edited['invoice_id']}").body
         self.assertEqual(pdf.count(b'edited by'), 1)
         self.assertEqual(pdf.count(b'Revised from'), 2)
+
+    def test_printed_payments_add_up_after_credit_is_collected(self):
+        """Credit is money still owed, not a payment: once collected, the bill must not list it as paid as well."""
+        pid = self.product(price=100)
+        invoice_id = self.sell(self.cashier, pid, qty=5, payments=[{'mode': 'Cash', 'amount': 300}, {'mode': 'Credit', 'amount': 200}]).json()['invoice_id']
+        receipt = pdf_text(self.owner.get(f'/api/invoice-receipt/{invoice_id}').body)
+        self.assertIn('Paid Cash 300.00', receipt)
+        self.assertNotIn('Paid Credit', receipt)
+        self.assertIn('Credit due Rs. 200.00', receipt)
+        self.assertEqual(self.owner.post('/api/payments', {'invoice_id': invoice_id, 'amount': 200, 'mode': 'UPI'}).status, 200)
+        receipt = pdf_text(self.owner.get(f'/api/invoice-receipt/{invoice_id}').body)
+        self.assertIn('Paid Cash 300.00 Paid UPI 200.00', receipt)
+        self.assertNotIn('Credit', receipt)
+        a4 = pdf_text(self.owner.get(f'/api/invoice-pdf/{invoice_id}').body)
+        self.assertIn('Payment(s): Cash Rs. 300.00, UPI Rs. 200.00', a4)
+        self.assertIn('Received Rs. 500.00', a4)
 
 
 class DiscountApprovalTests(RoleTestCase):

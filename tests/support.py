@@ -112,3 +112,21 @@ class ServerProcess:
 
     def client(self):
         return Client(self.base_url)
+
+
+def pdf_text(content):
+    """The text drawn in a PDF made by reportlab, whether or not its page streams are compressed."""
+    import base64
+    import re
+    import zlib
+    text = b''
+    for match in re.finditer(rb'stream\r?\n(.*?)endstream', content, re.S):
+        data = match.group(1).strip()
+        try:
+            if data.endswith(b'~>'):
+                data = zlib.decompress(base64.a85decode(data[:-2], adobe=False))
+        except (ValueError, zlib.error):
+            pass
+        text += data
+    parts = re.findall(rb'\(((?:[^\\)]|\\.)*)\) Tj', text)
+    return ' '.join(' '.join(re.sub(r'\\(.)', r'\1', part.decode('latin-1')) for part in parts).split())
