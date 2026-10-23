@@ -22,13 +22,16 @@ class CashClosingService(Service):
         """Expected takings for this user since their last closing (or since the start of today)."""
         since, until = self._period_start(actor['id']), self.now()
         by_mode = self.repos.cash_closings.payments_by_mode(actor['id'], since, until)
+        # A bill paid before the last closing and deleted since: its money is handed back from this drawer now.
+        deleted = self.repos.cash_closings.voided_earlier_payments(actor['id'], since, until)
         refunds = money(self.repos.cash_closings.refunds(actor['id'], since, until))
         cash_expenses = money(self.repos.cash_closings.cash_expenses(actor['id'], since, until))
-        cash_taken = sum(row['amount'] for row in by_mode if row['mode'].upper() == 'CASH')
+        cash = lambda rows: sum(row['amount'] for row in rows if row['mode'].upper() == 'CASH')
+        deleted_cash = money(cash(deleted))
         return {
             'period_start': since, 'period_end': until, 'modes': by_mode, 'bills': sum(row['bills'] for row in by_mode),
-            'refunds': refunds, 'cash_expenses': cash_expenses,
-            'expected_cash': money(cash_taken - refunds - cash_expenses),
+            'deleted_bills': deleted, 'deleted_cash': deleted_cash, 'refunds': refunds, 'cash_expenses': cash_expenses,
+            'expected_cash': money(cash(by_mode) - deleted_cash - refunds - cash_expenses),
         }
 
     def close(self, actor, data):
@@ -36,14 +39,14 @@ class CashClosingService(Service):
         counted_other = data.get('counted') if isinstance(data.get('counted'), dict) else {}
         with self.transaction():
             summary = self.summary(actor)
-            if not summary['modes'] and not summary['refunds'] and not summary['cash_expenses'] and not counted_cash:
+            if not (summary['modes'] or summary['deleted_bills'] or summary['refunds'] or summary['cash_expenses'] or counted_cash):
                 raise ValidationError('There is nothing to close since your last closing.')
             counted = {'Cash': money(counted_cash), **{str(k)[:20]: money(v.number(val)) for k, val in counted_other.items() if str(k).upper() != 'CASH'}}
             difference = money(counted_cash - summary['expected_cash'])
             values = {
                 'user_id': actor['id'], 'business_date': self.today(), 'period_start': summary['period_start'], 'closed_at': summary['period_end'],
                 'expected_json': json.dumps({**{row['mode']: row['amount'] for row in summary['modes']}, 'refunds': summary['refunds'],
-                                             'cash_expenses': summary['cash_expenses']}),
+                                             'deleted_cash': summary['deleted_cash'], 'cash_expenses': summary['cash_expenses']}),
                 'counted_json': json.dumps(counted), 'expected_cash': summary['expected_cash'], 'counted_cash': money(counted_cash),
                 'difference': difference, 'bills': summary['bills'], 'notes': v.optional_text(data.get('notes'), 500),
             }

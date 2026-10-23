@@ -225,3 +225,24 @@ body.is-loading::before{opacity:1;animation:loadbar 1.2s ease-in-out infinite}
   border:1px solid var(--line);border-radius:var(--r-sm);box-shadow:0 12px 30px rgba(15,23,42,.16)}
 .menu-items .button{width:100%;text-align:left;justify-content:flex-start}
 @media(max-width:640px){.menu{display:block;width:100%}.menu>summary{display:block;text-align:center}.menu-items{position:static;box-shadow:none;margin-top:6px}}
+
+/* ---- Scrollbars: thin, in the theme's colours, and only where content actually overflows ----
+   The left menu hides its thumb until the pointer is over it, so the menu does not show a bar all the time. */
+:root{--scroll-thumb:rgba(100,116,139,.45);--scroll-track:transparent}
+:root[data-mode="dark"]{--scroll-thumb:rgba(148,163,184,.42)}
+*{scrollbar-width:thin;scrollbar-color:var(--scroll-thumb) var(--scroll-track)}
+.sidebar{--scroll-thumb:transparent}
+.sidebar:hover,.sidebar:focus-within{--scroll-thumb:color-mix(in srgb,var(--sb-muted) 60%,transparent)}
+@media(hover:none){.sidebar{--scroll-thumb:color-mix(in srgb,var(--sb-muted) 60%,transparent)}}
+@media(prefers-contrast:more){:root,.sidebar,.sidebar:hover{--scroll-thumb:CanvasText;--scroll-track:Canvas}}
+/* Older Chrome/Edge/Safari without scrollbar-color */
+@supports not (scrollbar-color:auto){
+  ::-webkit-scrollbar{width:8px;height:8px}
+  ::-webkit-scrollbar-thumb{background:var(--scroll-thumb);border-radius:8px;border:2px solid transparent;background-clip:padding-box}
+  ::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:var(--scroll-track)}
+}
+
+/* ---- Left menu: larger section titles and items ---- */
+.nav button{font-size:17px}
+.nav-icon{width:20px;height:20px;flex-basis:20px}
+.nav-group{font-size:13px;letter-spacing:.07em;padding:16px 12px 6px}

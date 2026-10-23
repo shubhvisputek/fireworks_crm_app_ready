@@ -13,7 +13,8 @@ LINE_H = 5 * mm
 FOOTER_SPACE = 28 * mm
 HEADER_SPACE = 71 * mm
 COLUMN_W = PAGE_W / 2 - 24 * mm
-COLUMNS = ((MARGIN, 'CUSTOMER COPY'), (PAGE_W / 2 + 6 * mm, 'SELLER COPY'))
+# (x, label, show staff names). Who billed, edited or cancelled a bill is for the shop only, not the customer.
+COLUMNS = ((MARGIN, 'CUSTOMER COPY', False), (PAGE_W / 2 + 6 * mm, 'SELLER COPY', True))
 
 
 def short_time(value):
@@ -45,7 +46,7 @@ class InvoicePdf:
         self.c.setFont(font, size)
         self.c.drawString(x, y, fit_text(text, font, size, width))
 
-    def _header(self, x, copy_label, continued):
+    def _header(self, x, copy_label, continued, staff=True):
         c, inv, st = self.c, self.inv, self.settings
         top = PAGE_H - MARGIN
         self._line(x, top, st.get('business_name', ''), 'Helvetica-Bold', 11, COLUMN_W - 3 * mm)
@@ -59,16 +60,20 @@ class InvoicePdf:
         self._line(x, y, f"License: {st.get('license_number') or 'N/A'}")
         y -= 8 * mm
         lines = [f"Invoice: {inv['invoice_number']}", f"Date: {inv['invoice_date']}",
-                 f"Customer: {inv['customer_name_snapshot']} ({inv['customer_type_snapshot']})", f"Billed by: {inv.get('billed_by_name') or '-'}"]
+                 f"Customer: {inv['customer_name_snapshot']} ({inv['customer_type_snapshot']})",
+                 # The customer copy leaves this line blank so both copies keep their items side by side.
+                 f"Billed by: {inv.get('billed_by_name') or '-'}" if staff else '']
         for text in lines:
             self._line(x, y, text)
             y -= 4 * mm
         if inv.get('revised_from_number'):
-            self._line(x, y, f"Revised from {inv['revised_from_number']} - edited by {inv.get('edited_by_name') or '-'} on {short_time(inv.get('edited_at'))}", 'Helvetica-Oblique')
+            editor = f" - edited by {inv.get('edited_by_name') or '-'} on {short_time(inv.get('edited_at'))}" if staff else ''
+            self._line(x, y, f"Revised from {inv['revised_from_number']}{editor}", 'Helvetica-Oblique')
             y -= 4 * mm
         if inv['status'] == 'VOID':
             replaced = f" - replaced by {inv['revised_to_number']}" if inv.get('revised_to_number') else ''
-            self._line(x, y, f"CANCELLED{replaced} ({inv.get('voided_by_name') or '-'}, {short_time(inv.get('voided_at'))})", 'Helvetica-Bold')
+            who = f" ({inv.get('voided_by_name') or '-'}, {short_time(inv.get('voided_at'))})" if staff else ''
+            self._line(x, y, f"CANCELLED{replaced}{who}", 'Helvetica-Bold')
             y -= 4 * mm
         y -= 1 * mm
         if continued:
@@ -112,8 +117,8 @@ class InvoicePdf:
         per_page = max(1, int((PAGE_H - MARGIN - HEADER_SPACE - MARGIN - FOOTER_SPACE) // LINE_H))
         pages = [self.items[i:i + per_page] for i in range(0, len(self.items), per_page)] or [[]]
         for number, page_items in enumerate(pages):
-            for x, label in COLUMNS:
-                y = self._header(x, label, continued=number > 0)
+            for x, label, staff in COLUMNS:
+                y = self._header(x, label, continued=number > 0, staff=staff)
                 for item in page_items:
                     self._item(x, y, item)
                     y -= LINE_H
@@ -204,7 +209,7 @@ def receipt_pdf(invoice, items, payments, settings):
         text(f"Ph: {settings['phone']}", size=7, align='center')
     rule()
     text(f"Bill: {invoice['invoice_number']}")
-    text(f"Date: {invoice['invoice_date']}   By: {invoice.get('billed_by_name') or '-'}", size=7)
+    text(f"Date: {invoice['invoice_date']}", size=7)  # no staff name: the receipt goes to the customer
     text(f"Customer: {invoice['customer_name_snapshot']}", size=7)
     if invoice.get('revised_from_number'):
         text(f"Revised from {invoice['revised_from_number']}", 'Helvetica-Oblique', 7)

@@ -20,10 +20,11 @@ async function render() {
       <div class="card"><h3>Since ${dateTime(summary.period_start)}</h3>
         ${summary.modes.length ? summary.modes.map((m) => html`<div class="between notice"><span>${m.mode}</span><strong>${money(m.amount)}</strong></div>`)
           : html`<div class="muted small">No payments taken yet.</div>`}
+        ${summary.deleted_cash ? html`<div class="between"><span>Deleted bills, paid earlier (cash handed back)</span><strong>−${money(summary.deleted_cash)}</strong></div>` : ''}
         <div class="between"><span>Refunds given</span><strong>−${money(summary.refunds)}</strong></div>
         <div class="between"><span>Cash expenses paid</span><strong>−${money(summary.cash_expenses)}</strong></div><hr>
         <div class="between"><span>Cash expected in drawer</span><strong style="font-size:22px">${money(summary.expected_cash)}</strong></div>
-        <p class="small muted">${summary.bills} bills. Credit sales are not cash and are excluded.</p></div>
+        <p class="small muted">${summary.bills} bills. Credit sales are not cash, and deleted bills are left out.</p></div>
       <div class="card"><h3>Close my drawer</h3><form data-submit="cashClosing.close"><div class="formgrid">
         ${field({ name: 'counted_cash', label: 'Cash counted in drawer', type: 'number', value: '', required: true })}
         ${summary.modes.filter((m) => m.mode.toUpperCase() !== 'CASH').map((m) => field({ name: `counted_${m.mode}`, label: `${m.mode} confirmed`, type: 'number', value: m.amount }))}
