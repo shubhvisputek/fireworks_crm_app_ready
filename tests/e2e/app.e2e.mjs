@@ -605,6 +605,30 @@ try {
     assert.match(await toastText(page), /Settings saved/);
   });
 
+  await step('signing out leaves nothing behind for the next person', async () => {
+    const shared = await browser.newContext();
+    const counter = await shared.newPage();
+    await login(counter, server.url, 'admin', 'admin123');
+    await counter.waitForSelector('.dashboard');
+    await counter.click('button[data-preset="30d"]');
+    await counter.waitForSelector('button[data-preset="30d"].active');
+    await counter.click('.nav button:has-text("Billing")');
+    await counter.fill('#productSearch', 'P-1');
+    await counter.press('#productSearch', 'Enter');
+    assert.match(await counter.innerText('#itemCount'), /1 item/);
+    await counter.click('button:has-text("Logout")');
+    await counter.waitForSelector('button:has-text("Sign in")');
+    assert.equal(new URL(counter.url()).hash, '', 'the next person starts at the start page');
+    await counter.fill('input[name=username]', 'rohan');
+    await counter.fill('input[name=password]', 'rohanpass2');
+    await counter.click('button:has-text("Sign in")');
+    await counter.waitForSelector('.dashboard .pill-nav button.active');
+    assert.equal(await counter.innerText('.pill-nav button.active'), 'Last 7 days');
+    await counter.click('.nav button:has-text("Billing")');
+    assert.match(await counter.innerText('#cart'), /No items yet/, "the owner's unfinished bill is gone");
+    await shared.close();
+  });
+
   await step('admin sees the staff bill with Billed by', async () => {
     await nav(page, 'Sales');
     await page.waitForSelector('th:has-text("Billed by")');

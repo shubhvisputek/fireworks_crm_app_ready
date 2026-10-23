@@ -28,6 +28,28 @@ import './pages/users.js';
 import './pages/audit.js';
 import './pages/backup.js';
 
+// Signing out reloads the app at the start page, so nothing the last person had open (dashboard period, a bill
+// in progress, filters, lists) is still in memory when the next person signs in.
+const NOTICE_KEY = 'fw-signin-notice';
+function startOver(notice) {
+  try {
+    if (notice) sessionStorage.setItem(NOTICE_KEY, notice);
+  } catch {
+    /* storage unavailable: the notice is just not shown */
+  }
+  location.replace('/');
+}
+
+function showSigninNotice() {
+  try {
+    const notice = sessionStorage.getItem(NOTICE_KEY);
+    sessionStorage.removeItem(NOTICE_KEY);
+    if (notice) toast(notice, 'info');
+  } catch {
+    /* storage unavailable */
+  }
+}
+
 function renderLogin() {
   state.user = null;
   setHtml($('#app'), html`<div class="login"><div class="loginbox"><div class="brand">🎇 Fireworks CRM<small>Billing • Inventory • Analytics</small></div>
@@ -73,8 +95,11 @@ registerActions({
     await startSession(result.user, result.limits);
   },
   'auth.logout': async () => {
-    await api.post('/api/logout');
-    renderLogin();
+    try {
+      await api.post('/api/logout');
+    } finally {
+      startOver();
+    }
   },
   'account.password': () => formModal('Change Password', [
     { name: 'current_password', label: 'Current password', type: 'password', required: true },
@@ -96,10 +121,7 @@ document.addEventListener('keydown', (event) => {
 setErrorReporter(showError);
 setRenderer(renderPage);
 setUnauthorizedHandler(() => {
-  if (state.user) {
-    toast('Your session has ended. Please sign in again.', 'info');
-    renderLogin();
-  }
+  if (state.user) startOver('Your session has ended. Please sign in again.');
 });
 installActionListeners();
 // Charts draw with per-mode colours, so the dashboard is redrawn when the mode changes; CSS handles everything else.
@@ -115,7 +137,10 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('/static/sw.j
   try {
     const me = await api.get('/api/me');
     if (me.authenticated) await startSession(me.user, me.limits);
-    else renderLogin();
+    else {
+      renderLogin();
+      showSigninNotice();
+    }
   } catch (error) {
     setHtml($('#app'), errorBox(error));
   }
