@@ -16,6 +16,9 @@ class HeldBillRepository(Repository):
     def get(self, held_id):
         return self.one('SELECT * FROM held_bills WHERE id=?', (held_id,))
 
+    def get_by_ref(self, ref):
+        return self.one('SELECT * FROM held_bills WHERE ref=?', (ref,))
+
     def delete(self, held_id):
         return self.execute('DELETE FROM held_bills WHERE id=?', (held_id,)).rowcount
 
@@ -159,7 +162,8 @@ class CashClosingRepository(Repository):
                            GROUP BY p.mode ORDER BY p.mode''', (user_id, since, since, until))
 
     def refunds(self, user_id, since, until):
-        return self.scalar('SELECT COALESCE(SUM(total_refund), 0) FROM returns WHERE user_id=? AND created_at>? AND created_at<=?',
+        # The part taken off unpaid credit was never in the drawer.
+        return self.scalar('SELECT COALESCE(SUM(total_refund - credit_adjusted), 0) FROM returns WHERE user_id=? AND created_at>? AND created_at<=?',
                            (user_id, since, until), default=0)
 
     def cash_expenses(self, user_id, since, until):

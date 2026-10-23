@@ -88,7 +88,7 @@ class InsightService(Service):
         profit = t['sales'] - t['cogs']
         return {'sales': money(t['sales']), 'bills': t['bills'], 'avg_bill': money(t['avg_bill']), 'items': money(t['items']),
                 'customers': t['customers'], 'discounts': money(t['discounts']), 'discount_pct': _pct(t['discounts'], t['gross_sales']),
-                'credit': money(t['credit']), 'cogs': money(t['cogs']), 'gross_profit': money(profit),
+                'credit': money(t['credit']), 'returns': money(t['returns']), 'cogs': money(t['cogs']), 'gross_profit': money(profit),
                 'gross_margin': _pct(profit, t['sales'])}
 
     def _sales(self, ctx):

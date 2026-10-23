@@ -10,7 +10,7 @@ from reportlab.pdfgen import canvas
 PAGE_W, PAGE_H = A4
 MARGIN = 18 * mm
 LINE_H = 5 * mm
-FOOTER_SPACE = 28 * mm
+FOOTER_SPACE = 33 * mm  # room for up to 6 total lines (with Returned and Credit), payments and the footer
 HEADER_SPACE = 71 * mm
 COLUMN_W = PAGE_W / 2 - 24 * mm
 # (x, label, show staff names). Who billed, edited or cancelled a bill is for the shop only, not the customer.
@@ -108,7 +108,10 @@ class InvoicePdf:
         c.setFont('Helvetica-Bold', 7)
         c.line(x, y + 10 * mm, x + COLUMN_W, y + 10 * mm)
         y -= 2 * mm
-        totals = [('Subtotal', inv['subtotal']), ('Discount', inv['discount']), ('Total', inv['grand_total']), ('Received', inv['amount_received'])]
+        totals = [('Subtotal', inv['subtotal']), ('Discount', inv['discount']), ('Total', inv['grand_total'])]
+        if inv.get('returned_amount'):
+            totals.append(('Returned', inv['returned_amount']))
+        totals.append(('Received', inv['amount_received']))
         if inv['outstanding'] > 0:
             totals.append(('Credit', inv['outstanding']))
         for label, value in totals:
@@ -177,8 +180,10 @@ def receipt_pdf(invoice, items, payments, settings):
     """80 mm thermal-printer receipt; the page is exactly as long as the content."""
     payments = money_paid(payments)
     line = 3.8 * mm
-    totals = [('Subtotal', invoice['subtotal']), ('Discount', invoice['discount']), ('TOTAL', invoice['grand_total']),
-              ('Received', invoice['amount_received'])] + ([('Credit due', invoice['outstanding'])] if invoice['outstanding'] > 0 else [])
+    totals = [('Subtotal', invoice['subtotal']), ('Discount', invoice['discount']), ('TOTAL', invoice['grand_total'])]
+    if invoice.get('returned_amount'):
+        totals.append(('Returned', invoice['returned_amount']))
+    totals += [('Received', invoice['amount_received'])] + ([('Credit due', invoice['outstanding'])] if invoice['outstanding'] > 0 else [])
     header_lines = 6 + (1 if settings.get('phone') else 0) + (1 if invoice.get('revised_from_number') else 0) + (1 if invoice['status'] == 'VOID' else 0)
     height = (header_lines + 2 * len(items) + len(totals) + len(payments) + 6) * line + 2 * RECEIPT_MARGIN
     buffer = io.BytesIO()

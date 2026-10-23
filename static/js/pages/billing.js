@@ -217,7 +217,8 @@ async function showHeld() {
   openModal('Held Bills', bills.length ? html`${bills.map((held) => html`<div class="between notice" style="margin-bottom:8px">
       <div><strong>${held.ref}</strong><div class="small muted">${held.customer_name || 'Walk-in Customer'} • ${held.items.length} items •
         ${money(held.discount)} discount • ${dateTime(held.created_at)}</div></div>
-      <div class="row"><button class="button primary" data-action="billing.resume" data-id="${held.id}">Resume</button>
+      <div class="row">${held.ref === bill.heldRef ? html`<span class="tag">On the counter</span>`
+        : html`<button class="button primary" data-action="billing.resume" data-id="${held.id}">Resume</button>`}
         ${can('held_bills.delete') ? html`<button class="button" data-action="billing.deleteHeld" data-id="${held.id}">Delete</button>` : ''}</div></div>`)}`
     : html`<div class="muted small">No held bills.</div>`);
 }
@@ -286,17 +287,17 @@ registerActions({
   'billing.hold': async () => {
     if (!bill.items.length) return toast('Add products before holding a bill.', 'error');
     await api.post('/api/held-bills', { customer_name: bill.customerName.trim() || 'Walk-in Customer', customer_phone: bill.customerPhone.trim(),
-      items: bill.items, discount: billTotals().discount });
+      items: bill.items, discount: billTotals().discount, replaces: bill.heldRef || undefined });
     resetBill();
     renderBilling();
     toast('Bill held. Start another bill or resume it from Held Bills.');
   },
   'billing.showHeld': showHeld,
   'billing.resume': async (el) => {
-    loadHeldBill(await api.post(`/api/held-bills/resume/${el.dataset.id}`));
+    loadHeldBill(await api.get(`/api/held-bills/resume/${el.dataset.id}`));
     closeModal();
     renderBilling();
-    toast('Held bill resumed');
+    toast('Held bill resumed. It stays in Held Bills until you finish it.');
   },
   'billing.deleteHeld': async (el) => {
     await api.post(`/api/held-bills/delete/${el.dataset.id}`);

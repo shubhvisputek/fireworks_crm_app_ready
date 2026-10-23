@@ -128,6 +128,8 @@ class SalesService(Service):
             for payment in payments:
                 self.repos.invoices.add_payment({'invoice_id': invoice_id, 'customer_id': customer['id'] if customer else None,
                                                  'payment_date': self.today(), 'user_id': actor['id'], 'created_at': now, **payment})
+            if data.get('held_ref'):
+                self.services.held_bills.release(actor, data['held_ref'])  # a resumed held bill is done once it is billed
             self.audit(actor, 'Invoice finalized', 'INVOICE', invoice_id,
                        new={'invoice_number': number, 'total': total, 'discount': discount, 'discount_approved_by': approved_by})
         return invoice_id, number
@@ -221,18 +223,24 @@ class SalesService(Service):
             if not lines:
                 raise ValidationError('Select at least one item to return.')
             refund = money(refund)
+            # If the customer still owes on this bill, the returned goods come off that first; only the rest is paid back.
+            credit_adjusted = money(min(refund, invoice['outstanding']))
+            if credit_adjusted:
+                self.repos.invoices.set_outstanding(invoice_id, money(invoice['outstanding'] - credit_adjusted))
             number = f"RET-{self.today().replace('-', '')}-{self.repos.sequences.next('return'):05d}"
             return_id = self.repos.invoices.create_return({
                 'return_number': number, 'invoice_id': invoice_id, 'customer_id': invoice['customer_id'], 'return_date': self.today(),
-                'reason': v.optional_text(data.get('reason')), 'total_refund': refund, 'user_id': actor['id'], 'created_at': self.now(),
+                'reason': v.optional_text(data.get('reason')), 'total_refund': refund, 'credit_adjusted': credit_adjusted,
+                'user_id': actor['id'], 'created_at': self.now(),
             })
             for item, qty, qty_base, amount in lines:
                 self.repos.invoices.add_return_item({'return_id': return_id, 'invoice_item_id': item['id'], 'product_id': item['product_id'],
                                                      'qty_input': qty, 'qty_base': qty_base, 'refund_amount': amount})
                 self.repos.inventory.add_movement(item['product_id'], 'RETURN_IN', qty_base, self.now(), unit_cost=item['cost_snapshot'],
                                                   ref_type='RETURN', ref_id=return_id, reason='Sales return', user_id=actor['id'])
-            self.audit(actor, 'Sale returned', 'RETURN', return_id, new={'invoice_id': invoice_id, 'refund': refund})
-        return {'return_number': number, 'refund': refund}
+            self.audit(actor, 'Sale returned', 'RETURN', return_id,
+                       new={'invoice_id': invoice_id, 'refund': refund, 'credit_adjusted': credit_adjusted})
+        return {'return_number': number, 'refund': refund, 'credit_adjusted': credit_adjusted, 'paid_back': money(refund - credit_adjusted)}
 
     def collect_payment(self, actor, data):
         """Record money received against a bill's outstanding credit."""
