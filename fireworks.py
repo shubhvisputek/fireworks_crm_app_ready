@@ -524,7 +524,9 @@ def windows_network_state(port):
         $profiles = @(Get-NetConnectionProfile | ForEach-Object { @{ name = $_.InterfaceAlias; category = [string]$_.NetworkCategory } })
         $blocked = @(%s | ForEach-Object { $_.DisplayName })
         $allow = [bool](Get-NetFirewallRule -DisplayName '%s' -Enabled True)
-        @{ profiles = $profiles; blocked = $blocked; allow = $allow }""" % (PYTHON_BLOCK_RULES, FIREWALL_RULE.format(port)))
+        $security = @(Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntiVirusProduct | ForEach-Object { $_.displayName }) +
+                    @(Get-CimInstance -Namespace root/SecurityCenter2 -ClassName FirewallProduct | ForEach-Object { $_.displayName })
+        @{ profiles = $profiles; blocked = $blocked; allow = $allow; security = $security }""" % (PYTHON_BLOCK_RULES, FIREWALL_RULE.format(port)))
 
 
 def wifi_problems(state):
@@ -540,6 +542,25 @@ def wifi_problems(state):
     if not state.get('allow'):
         problems.append('Windows Firewall has no rule letting devices on the shop Wi-Fi reach the app.')
     return problems
+
+
+def other_security_software(state):
+    """Antivirus/firewall products besides Windows' own; many have a firewall that Windows settings don't control."""
+    names = {name.strip() for name in (state or {}).get('security') or [] if name and 'windows defender' not in name.lower()}
+    return sorted(names)
+
+
+def warn_other_security(state):
+    for name in other_security_software(state):
+        warn('{} is installed. It can block phones with its own firewall even when Windows allows them.'.format(name))
+        say('         If phones still cannot connect, open {} and in its Firewall settings allow this program:'.format(name))
+        say('         ' + Style.paint('1', python_program()))
+        say('         (or set the shop Wi-Fi to Home/Trusted there). To test, switch its firewall off for a minute.')
+
+
+def python_program():
+    """The python.exe that firewalls see listening (inside a virtual environment that is the base Python)."""
+    return getattr(sys, '_base_executable', None) or sys.executable
 
 
 def windows_fix_script(port, make_private):
@@ -574,8 +595,10 @@ def check_windows_wifi(port, assume_yes=False):
         warn('Could not read the Windows network settings; if phones cannot connect, run "{} wifi-check".'.format(command_name()))
         return False
     problems = wifi_problems(state)
+    say('  Python program in use: {}'.format(python_program()))
     if not problems:
         ok('Windows allows devices on this network to connect (Private network, firewall open for port {}).'.format(port))
+        warn_other_security(state)
         return True
     for problem in problems:
         warn(problem)
@@ -593,7 +616,8 @@ def check_windows_wifi(port, assume_yes=False):
         for problem in still:
             warn('Still: ' + problem)
         return False
-    ok('Fixed: phones and other devices on the shop Wi-Fi can now connect.')
+    ok('Windows now allows phones and other devices on the shop Wi-Fi to connect.')
+    warn_other_security(state)
     return True
 
 

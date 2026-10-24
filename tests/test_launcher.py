@@ -180,6 +180,11 @@ class WindowsWifiTests(unittest.TestCase):
         self.fw.run_as_admin = lambda script: False
         self.assertFalse(self.fw.check_windows_wifi(8000))
 
+    def test_other_antivirus_is_named(self):
+        state = dict(self.GOOD, security=['Quick Heal AntiVirus Pro', 'Windows Defender'])
+        self.assertEqual(self.fw.other_security_software(state), ['Quick Heal AntiVirus Pro'])
+        self.assertEqual(self.fw.other_security_software(self.GOOD), [])
+
     def test_private_network_is_not_touched(self):
         state = {'profiles': [{'name': 'Wi-Fi', 'category': 'Private'}], 'blocked': [], 'allow': False}
         self.stub_states(state, self.GOOD)
