@@ -136,7 +136,7 @@ class WindowsWifiTests(unittest.TestCase):
         sys.path.insert(0, ROOT)
         import fireworks
         self.fw = fireworks
-        self.saved = {name: getattr(fireworks, name) for name in ('powershell_json', 'run_as_admin', 'confirm', 'WINDOWS', 'default_route_ip')}
+        self.saved = {name: getattr(fireworks, name) for name in ('powershell_json', 'powershell', 'windows_network_state', 'run_as_admin', 'confirm', 'WINDOWS', 'default_route_ip')}
         self.calls = []
 
     def tearDown(self):
@@ -145,7 +145,7 @@ class WindowsWifiTests(unittest.TestCase):
 
     def stub_states(self, *states):
         answers = list(states)
-        self.fw.powershell_json = lambda script: answers.pop(0) if len(answers) > 1 else answers[0]
+        self.fw.windows_network_state = lambda port: answers.pop(0) if len(answers) > 1 else answers[0]
 
     BLOCKED = {'profiles': [{'name': 'Wi-Fi', 'category': 'Public'}], 'blocked': ['python.exe'], 'allow': False}
     GOOD = {'profiles': [{'name': 'Wi-Fi', 'category': 'Private'}], 'blocked': [], 'allow': True}
@@ -180,6 +180,31 @@ class WindowsWifiTests(unittest.TestCase):
         self.fw.run_as_admin = lambda script: False
         self.assertFalse(self.fw.check_windows_wifi(8000))
 
+    def test_each_part_is_read_separately_and_failures_are_shown(self):
+        answers = {'profiles': '{"value":[{"name":"Wi-Fi","category":"Private"}]}', 'blocked': '{"value":[]}',
+                   'allow': '', 'security': '{"value":["Quick Heal AntiVirus Pro","Windows Defender"]}'}
+        seen = []
+
+        def fake(script, timeout=60):
+            key = next(k for k in ('Get-NetConnectionProfile', 'Action Block', 'DisplayName \'Fireworks', 'SecurityCenter2') if k in script)
+            name = {'Get-NetConnectionProfile': 'profiles', 'Action Block': 'blocked', 'DisplayName \'Fireworks': 'allow', 'SecurityCenter2': 'security'}[key]
+            seen.append(name)
+            return (0, answers[name]) if answers[name] else (1, 'Get-NetFirewallRule : Access is denied.')
+        self.fw.powershell = fake
+        state = self.fw.windows_network_state(8000)
+        self.assertEqual(sorted(seen), ['allow', 'blocked', 'profiles', 'security'])
+        self.assertEqual((state['profiles'][0]['category'], state['blocked'], state['allow']), ('Private', [], None))
+        self.assertEqual(self.fw.other_security_software(state), ['Quick Heal AntiVirus Pro'])
+        self.assertEqual(self.fw.wifi_problems(state), [], 'a part that could not be read is not reported as a problem')
+        self.assertEqual(len(self.fw.POWERSHELL_ERRORS), 1)
+        self.assertIn('Access is denied', self.fw.POWERSHELL_ERRORS[0])
+        self.fw.powershell = lambda script, timeout=60: (1, 'timed out')
+        self.assertIsNone(self.fw.windows_network_state(8000), 'nothing readable at all')
+
+    def test_empty_lists_come_back_as_lists(self):
+        self.fw.powershell = lambda script, timeout=60: (0, '{"value":[]}')
+        self.assertEqual(self.fw.powershell_json('@()'), [])
+
     def test_other_antivirus_is_named(self):
         state = dict(self.GOOD, security=['Quick Heal AntiVirus Pro', 'Windows Defender'])
         self.assertEqual(self.fw.other_security_software(state), ['Quick Heal AntiVirus Pro'])
@@ -196,7 +221,7 @@ class WindowsWifiTests(unittest.TestCase):
     def test_addresses_skip_virtual_adapters_and_put_wifi_first(self):
         self.fw.WINDOWS = True
         self.fw.default_route_ip = lambda: '192.168.1.40'
-        self.fw.powershell_json = lambda script: [
+        self.fw.powershell_json = lambda script, label='': [
             {'IPAddress': '172.24.160.1', 'InterfaceAlias': 'vEthernet (WSL)'},
             {'IPAddress': '192.168.56.1', 'InterfaceAlias': 'VirtualBox Host-Only Network'},
             {'IPAddress': '10.0.0.5', 'InterfaceAlias': 'Ethernet'},
