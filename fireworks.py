@@ -442,19 +442,166 @@ def setup_from_args(config, args, force):
     return admin_wizard(config, args, force=force)
 
 
-def lan_addresses():
-    found = set()
+# Adapters that are not the shop network: a phone can never reach the computer through these.
+VIRTUAL_ADAPTERS = ('vethernet', 'virtualbox', 'vmware', 'hyper-v', 'wsl', 'loopback', 'bluetooth', 'docker', 'tailscale',
+                    'zerotier', 'vpn', 'tap-', 'tun')
+
+
+def default_route_ip():
+    """The address this computer uses to reach the network (normally the Wi-Fi or Ethernet one)."""
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-            sock.connect(('10.255.255.255', 1))  # picks the Wi-Fi/LAN address; nothing is sent
-            found.add(sock.getsockname()[0])
+            sock.connect(('10.255.255.255', 1))  # nothing is sent; this only picks the outgoing adapter
+            return sock.getsockname()[0]
     except OSError:
-        pass
+        return None
+
+
+def usable_ip(ip):
+    return bool(ip) and not ip.startswith(('127.', '169.254.', '0.'))
+
+
+def lan_addresses():
+    """[(ip, adapter name or '')], the most likely shop-Wi-Fi address first."""
+    found = []
+    if WINDOWS:
+        rows = powershell_json("Get-NetIPAddress -AddressFamily IPv4 | Select-Object IPAddress, InterfaceAlias") or []
+        rows = rows if isinstance(rows, list) else [rows]
+        found = [(r.get('IPAddress'), r.get('InterfaceAlias') or '') for r in rows
+                 if usable_ip(r.get('IPAddress')) and not any(v in (r.get('InterfaceAlias') or '').lower() for v in VIRTUAL_ADAPTERS)]
+    if not found:
+        ips = {default_route_ip()}
+        try:
+            ips.update(socket.gethostbyname_ex(socket.gethostname())[2])
+        except OSError:
+            pass
+        found = [(ip, '') for ip in ips if usable_ip(ip)]
+    preferred = default_route_ip()
+    rank = lambda item: (item[0] != preferred, 'wi-fi' not in item[1].lower() and 'wlan' not in item[1].lower(), item[0])
+    return sorted(set(found), key=rank)
+
+
+def reachable_on(ip, port, timeout=1.0):
     try:
-        found.update(socket.gethostbyname_ex(socket.gethostname())[2])
+        with socket.create_connection((ip, port), timeout=timeout):
+            return True
     except OSError:
-        pass
-    return sorted(ip for ip in found if not ip.startswith(('127.', '169.254.')))
+        return False
+
+
+# ---- Windows: the network type and the firewall decide whether a phone may connect ---------------------
+FIREWALL_RULE = 'Fireworks CRM (port {})'
+# Inbound rules that block Python itself; one query over all program filters is much faster than checking rule by rule.
+PYTHON_BLOCK_RULES = ("(Get-NetFirewallApplicationFilter | Where-Object Program -like '*python*.exe' | Get-NetFirewallRule | "
+                      "Where-Object { $_.Direction -eq 'Inbound' -and $_.Action -eq 'Block' -and $_.Enabled -eq 'True' })")
+
+
+def powershell(script, timeout=25):
+    """Run a PowerShell script (passed encoded, so no quoting problems). Returns (exit code, output)."""
+    import base64
+    encoded = base64.b64encode(script.encode('utf-16-le')).decode('ascii')
+    try:
+        result = subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, timeout=timeout)
+        return result.returncode, result.stdout
+    except (OSError, subprocess.SubprocessError) as error:
+        return 1, str(error)
+
+
+def powershell_json(script):
+    code, output = powershell("$ErrorActionPreference = 'SilentlyContinue'; " + script + " | ConvertTo-Json -Compress -Depth 4")
+    if code != 0 or not output.strip():
+        return None
+    try:
+        return json.loads(output.strip().splitlines()[-1])
+    except ValueError:
+        return None
+
+
+def windows_network_state(port):
+    """What Windows currently allows: network types, firewall rules that block Python, and our allow rule."""
+    return powershell_json("""
+        $profiles = @(Get-NetConnectionProfile | ForEach-Object { @{ name = $_.InterfaceAlias; category = [string]$_.NetworkCategory } })
+        $blocked = @(%s | ForEach-Object { $_.DisplayName })
+        $allow = [bool](Get-NetFirewallRule -DisplayName '%s' -Enabled True)
+        @{ profiles = $profiles; blocked = $blocked; allow = $allow }""" % (PYTHON_BLOCK_RULES, FIREWALL_RULE.format(port)))
+
+
+def wifi_problems(state):
+    """Plain-language list of what stops phones connecting, from windows_network_state()."""
+    if not state:
+        return []
+    problems = []
+    public = [p['name'] for p in state.get('profiles') or [] if p.get('category') == 'Public']
+    if public:
+        problems.append('Windows treats "{}" as a Public network, so it blocks phones and other devices.'.format(', '.join(public)))
+    if state.get('blocked'):
+        problems.append('Windows Firewall has a rule blocking Python (made when its "Allow access" question was refused or closed).')
+    if not state.get('allow'):
+        problems.append('Windows Firewall has no rule letting devices on the shop Wi-Fi reach the app.')
+    return problems
+
+
+def windows_fix_script(port, make_private):
+    """PowerShell run as administrator: shop network to Private, Python block rules removed, port opened to the local network only."""
+    lines = ["$ErrorActionPreference = 'SilentlyContinue'"]
+    if make_private:
+        lines.append("Get-NetConnectionProfile | Where-Object NetworkCategory -eq 'Public' | Set-NetConnectionProfile -NetworkCategory Private")
+    lines.append(PYTHON_BLOCK_RULES + " | Remove-NetFirewallRule")
+    lines.append("Remove-NetFirewallRule -DisplayName '{0}'; New-NetFirewallRule -DisplayName '{0}' -Direction Inbound -Action Allow "
+                 "-Protocol TCP -LocalPort {1} -Profile Private,Domain -RemoteAddress LocalSubnet | Out-Null".format(FIREWALL_RULE.format(port), port))
+    return '\n'.join(lines)
+
+
+def run_as_admin(script):
+    """Run a PowerShell script as administrator: Windows shows its "allow changes?" box. True if it ran."""
+    import tempfile
+    fd, path = tempfile.mkstemp(suffix='.ps1', prefix='fireworks-wifi-')
+    with os.fdopen(fd, 'w', encoding='utf-8-sig') as handle:
+        handle.write(script)
+    try:
+        code, _ = powershell("Start-Process powershell -Verb RunAs -Wait -WindowStyle Hidden "
+                             "-ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','\"{}\"'".format(path.replace("'", "''")), timeout=180)
+        return code == 0
+    finally:
+        os.remove(path)
+
+
+def check_windows_wifi(port, assume_yes=False):
+    """Find and (with permission) fix what stops phones reaching the app. Returns True when nothing is in the way."""
+    state = windows_network_state(port)
+    if state is None:
+        warn('Could not read the Windows network settings; if phones cannot connect, run "{} wifi-check".'.format(command_name()))
+        return False
+    problems = wifi_problems(state)
+    if not problems:
+        ok('Windows allows devices on this network to connect (Private network, firewall open for port {}).'.format(port))
+        return True
+    for problem in problems:
+        warn(problem)
+    make_private = any(p.get('category') == 'Public' for p in state.get('profiles') or [])
+    say('  The fix: mark the shop Wi-Fi as Private, remove the rule blocking Python, and open port {} to devices on'.format(port))
+    say('  the same network only. Do this only on your own shop Wi-Fi, never on public Wi-Fi.')
+    if not confirm('Fix it now? Windows will ask "Do you want to allow this app to make changes" - click Yes', True, assume_yes):
+        say('  Not changed. Run "{} wifi-check" any time to fix it.'.format(command_name()))
+        return False
+    if not run_as_admin(windows_fix_script(port, make_private)):
+        warn('Windows did not allow the change (the permission box was closed or refused).')
+        return False
+    still = wifi_problems(windows_network_state(port))
+    if still:
+        for problem in still:
+            warn('Still: ' + problem)
+        return False
+    ok('Fixed: phones and other devices on the shop Wi-Fi can now connect.')
+    return True
+
+
+PHONE_TIPS = [
+    'The phone must be on the SAME Wi-Fi as this computer (not mobile data, not a "Guest" Wi-Fi).',
+    'Type the address exactly, starting with http:// (not https://), including the :{port} at the end.',
+    'If it still will not open, the router may keep devices apart ("AP isolation" / "client isolation"): turn that off in the router settings.',
+]
 
 
 def free_port(start):
@@ -481,7 +628,13 @@ def cmd_start(args):
     host = args.host or ('0.0.0.0' if network else '127.0.0.1')
     port = args.port or int(os.environ.get('PORT', DEFAULT_PORT))
     if app_running(port):
+        lan = default_route_ip()
+        if network and lan and not reachable_on(lan, port):
+            raise LauncherError('Fireworks CRM is already running on port {} for THIS COMPUTER ONLY (option 1), so phones cannot reach it. '
+                                'Close that window (or press Ctrl+C in it) and start again with option 2.'.format(port))
         say('Fireworks CRM is already running at http://localhost:{}'.format(port))
+        if network:
+            show_network_addresses(port)
         if not args.no_browser and (args.open or interactive()):
             webbrowser.open('http://localhost:{}'.format(port))
         return EXIT_OK
@@ -512,16 +665,10 @@ def cmd_start(args):
     heading('Fireworks CRM is starting')
     say('  On this computer open:  ' + Style.paint('1', 'http://localhost:{}'.format(port)))
     if network:
-        addresses = lan_addresses()
-        if addresses:
-            say('  On phones, tablets and other computers on the same Wi-Fi open:')
-            for ip in addresses:
-                say('      ' + Style.paint('1', 'http://{}:{}'.format(ip, port)))
-        else:
-            warn('Could not find this computer\'s Wi-Fi address; check that it is connected.')
-        say('  - Use only your own password-protected Wi-Fi, never public Wi-Fi.')
+        show_network_addresses(port)
         if WINDOWS:
-            say('  - If Windows Firewall asks, allow Python on PRIVATE networks only.')
+            check_windows_wifi(port, args.yes)
+        say('  - Use only your own password-protected Wi-Fi, never public Wi-Fi.')
     say('  Data folder: {}'.format(os.path.dirname(config.db_path)))
     say('  Keep this window open while you use the app. Press Ctrl+C to stop it.')
     say()
@@ -533,6 +680,41 @@ def cmd_start(args):
     except KeyboardInterrupt:
         say()
         say('Fireworks CRM has stopped.')
+    return EXIT_OK
+
+
+def show_network_addresses(port):
+    addresses = lan_addresses()
+    if not addresses:
+        warn('Could not find this computer\'s Wi-Fi address; check that it is connected to the shop Wi-Fi.')
+        return
+    say('  On phones, tablets and other computers on the same Wi-Fi open:')
+    for n, (ip, adapter) in enumerate(addresses):
+        label = ' ({})'.format(adapter) if adapter else ''
+        say('      ' + Style.paint('1', 'http://{}:{}'.format(ip, port)) + label + ('   <- try this first' if n == 0 and len(addresses) > 1 else ''))
+    for tip in PHONE_TIPS:
+        say('  - ' + tip.format(port=port))
+
+
+def cmd_wifi_check(args):
+    """Why phones can't open the app, and the fix."""
+    port = args_port(args)
+    heading('Sharing on the shop Wi-Fi')
+    if app_running(port):
+        lan = default_route_ip()
+        if lan and reachable_on(lan, port):
+            ok('The app is running and shared on the network (port {}).'.format(port))
+        else:
+            bad('The app is running for THIS COMPUTER ONLY. Close it and start with option 2 ("start --network").')
+    else:
+        warn('The app is not running on port {}. Start it with option 2 ("start --network").'.format(port))
+    show_network_addresses(port)
+    if WINDOWS:
+        return EXIT_OK if check_windows_wifi(port, args.yes) else EXIT_ERROR
+    if sys.platform == 'darwin':
+        say('  - macOS: if asked "accept incoming network connections" for Python, click Allow (System Settings > Network > Firewall).')
+    else:
+        say('  - Linux with a firewall (ufw): sudo ufw allow from 192.168.0.0/16 to any port {} proto tcp'.format(port))
     return EXIT_OK
 
 
@@ -696,6 +878,7 @@ MENU = [
     ('7', 'List backups', ['backups']),
     ('8', 'Restore a backup', ['restore']),
     ('9', 'Run the tests', ['test']),
+    ('w', 'Phones cannot open the app? Check and fix Wi-Fi sharing', ['wifi-check']),
     ('h', 'Help: every command, for scripts and shortcuts', ['help']),
     ('q', 'Quit', None),
 ]
@@ -777,6 +960,7 @@ def build_parser():
     restore = commands.add_parser('restore', parents=[common], help='replace the data with a backup (app must be stopped)')
     restore.add_argument('name', nargs='?', help='backup file name (from "backups"); asks when left out')
     commands.add_parser('test', parents=[common], help='run the automated tests')
+    commands.add_parser('wifi-check', parents=[common], help='phones cannot open the app? find out why and fix it (Windows: network type and firewall)')
     commands.add_parser('help', parents=[common], help='show this help')
     return parser
 
@@ -791,13 +975,15 @@ EXAMPLES = '''examples:
   start --admin-user owner --shop-name "Shree Fireworks" --password-stdin --yes --install
                                           first run without questions
   check                                   is this computer ready? (exit code 0 = yes)
+  wifi-check                              phones cannot open the app: shows why and fixes it
   backup / backups / restore NAME         backups from the command line
 
 The administrator password can also come from the FIREWORKS_ADMIN_PASSWORD environment variable.
 Exit codes: 0 = done, 1 = problem, 2 = the administrator must be set up first.'''
 
 COMMANDS = {'start': cmd_start, 'setup': cmd_setup, 'reset-admin': cmd_setup, 'check': cmd_check, 'install': cmd_install,
-            'status': cmd_status, 'backup': cmd_backup, 'backups': cmd_backups, 'restore': cmd_restore, 'test': cmd_test}
+            'status': cmd_status, 'backup': cmd_backup, 'backups': cmd_backups, 'restore': cmd_restore, 'test': cmd_test,
+            'wifi-check': cmd_wifi_check}
 
 
 def run(parser, argv):

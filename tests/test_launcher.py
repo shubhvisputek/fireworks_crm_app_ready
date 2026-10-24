@@ -127,3 +127,92 @@ class LauncherTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class WindowsWifiTests(unittest.TestCase):
+    """The Windows network/firewall checks, with PowerShell's answers stubbed (these run on any system)."""
+
+    def setUp(self):
+        sys.path.insert(0, ROOT)
+        import fireworks
+        self.fw = fireworks
+        self.saved = {name: getattr(fireworks, name) for name in ('powershell_json', 'run_as_admin', 'confirm', 'WINDOWS', 'default_route_ip')}
+        self.calls = []
+
+    def tearDown(self):
+        for name, value in self.saved.items():
+            setattr(self.fw, name, value)
+
+    def stub_states(self, *states):
+        answers = list(states)
+        self.fw.powershell_json = lambda script: answers.pop(0) if len(answers) > 1 else answers[0]
+
+    BLOCKED = {'profiles': [{'name': 'Wi-Fi', 'category': 'Public'}], 'blocked': ['python.exe'], 'allow': False}
+    GOOD = {'profiles': [{'name': 'Wi-Fi', 'category': 'Private'}], 'blocked': [], 'allow': True}
+
+    def test_problems_are_named_in_plain_words(self):
+        problems = self.fw.wifi_problems(self.BLOCKED)
+        self.assertEqual(len(problems), 3)
+        self.assertIn('Public network', problems[0])
+        self.assertIn('blocking Python', problems[1])
+        self.assertEqual(self.fw.wifi_problems(self.GOOD), [])
+
+    def test_fix_runs_as_admin_and_is_checked_afterwards(self):
+        self.stub_states(self.BLOCKED, self.GOOD)
+        self.fw.confirm = lambda *a, **k: True
+        self.fw.run_as_admin = lambda script: self.calls.append(script) or True
+        self.assertTrue(self.fw.check_windows_wifi(8000))
+        script = self.calls[0]
+        self.assertIn("Set-NetConnectionProfile -NetworkCategory Private", script)
+        self.assertIn('Remove-NetFirewallRule', script)
+        self.assertIn('-LocalPort 8000 -Profile Private,Domain -RemoteAddress LocalSubnet', script, 'opened to the shop network only')
+
+    def test_nothing_changes_without_permission(self):
+        self.stub_states(self.BLOCKED)
+        self.fw.confirm = lambda *a, **k: False
+        self.fw.run_as_admin = lambda script: self.calls.append(script) or True
+        self.assertFalse(self.fw.check_windows_wifi(8000))
+        self.assertEqual(self.calls, [])
+
+    def test_refused_permission_box_is_reported(self):
+        self.stub_states(self.BLOCKED)
+        self.fw.confirm = lambda *a, **k: True
+        self.fw.run_as_admin = lambda script: False
+        self.assertFalse(self.fw.check_windows_wifi(8000))
+
+    def test_private_network_is_not_touched(self):
+        state = {'profiles': [{'name': 'Wi-Fi', 'category': 'Private'}], 'blocked': [], 'allow': False}
+        self.stub_states(state, self.GOOD)
+        self.fw.confirm = lambda *a, **k: True
+        self.fw.run_as_admin = lambda script: self.calls.append(script) or True
+        self.assertTrue(self.fw.check_windows_wifi(8000))
+        self.assertNotIn('Set-NetConnectionProfile', self.calls[0])
+
+    def test_addresses_skip_virtual_adapters_and_put_wifi_first(self):
+        self.fw.WINDOWS = True
+        self.fw.default_route_ip = lambda: '192.168.1.40'
+        self.fw.powershell_json = lambda script: [
+            {'IPAddress': '172.24.160.1', 'InterfaceAlias': 'vEthernet (WSL)'},
+            {'IPAddress': '192.168.56.1', 'InterfaceAlias': 'VirtualBox Host-Only Network'},
+            {'IPAddress': '10.0.0.5', 'InterfaceAlias': 'Ethernet'},
+            {'IPAddress': '192.168.1.40', 'InterfaceAlias': 'Wi-Fi'},
+            {'IPAddress': '127.0.0.1', 'InterfaceAlias': 'Loopback Pseudo-Interface 1'},
+        ]
+        self.assertEqual(self.fw.lan_addresses(), [('192.168.1.40', 'Wi-Fi'), ('10.0.0.5', 'Ethernet')])
+
+
+class SharedOnNetworkTests(unittest.TestCase):
+    def test_a_copy_for_this_computer_only_is_detected(self):
+        sys.path.insert(0, ROOT)
+        import fireworks
+        ip = fireworks.default_route_ip()
+        if not ip:
+            self.skipTest('no network address on this machine')
+        with socket.socket() as local_only:
+            local_only.bind(('127.0.0.1', 0))
+            local_only.listen()
+            self.assertFalse(fireworks.reachable_on(ip, local_only.getsockname()[1]))
+        with socket.socket() as shared:
+            shared.bind(('0.0.0.0', 0))
+            shared.listen()
+            self.assertTrue(fireworks.reachable_on(ip, shared.getsockname()[1]))
