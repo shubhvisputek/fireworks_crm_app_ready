@@ -45,6 +45,7 @@ With no options the launcher shows the requirements check, the status (data fold
   - It warns if the app is already running for this computer only (option 1). Close that window and start again with option 2.
   - Also check that the phone is on the same Wi-Fi (not mobile data or a guest network) and that you typed `http://` and the `:8000`.
 - **If port 8000 is busy** it picks the next free port and says which. If the app is already running it just opens it.
+- **Only one copy at a time:** starting (option 1 or 2) first stops any copy of the app that is already running on this computer, on any port, then starts fresh. It never touches other programs: it only stops a program that answers as Fireworks CRM. Menu **s** (or `stop`) just stops it; `start --keep-running` leaves a running copy alone.
 - **Missing packages:** it offers to install them. If this Python does not allow installing packages (some Linux and Homebrew setups), it creates a private `.venv` folder and uses it automatically from then on.
 
 Every menu item is also a command that runs straight away without questions, for shortcuts and scripts (`python fireworks.py` works on every system too):

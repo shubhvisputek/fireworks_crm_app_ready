@@ -140,13 +140,97 @@ def port_free(host, port):
 
 
 def app_running(port):
-    """True if Fireworks CRM is already answering on this port."""
+    """True if Fireworks CRM is answering on this port (its /api/me reply, which other programs don't give)."""
     try:
         request = urllib.request.Request('http://127.0.0.1:{}/api/me'.format(port), headers={'Host': 'localhost'})
         with urllib.request.urlopen(request, timeout=1.5) as response:
-            return 'authenticated' in json.loads(response.read().decode('utf-8'))
+            reply = json.loads(response.read().decode('utf-8'))
+            return isinstance(reply, dict) and 'authenticated' in reply and 'limits' in reply
     except Exception:
         return False
+
+
+# ---- copies of the app already running ----------------------------------------------------------------
+def listening_ports():
+    """{port: pid} of programs on this computer waiting for TCP connections."""
+    found = {}
+    if WINDOWS:
+        rows = powershell_json('Get-NetTCPConnection -State Listen | Select-Object LocalPort, OwningProcess') or []
+        for row in rows if isinstance(rows, list) else [rows]:
+            if row.get('LocalPort') and row.get('OwningProcess'):
+                found.setdefault(int(row['LocalPort']), int(row['OwningProcess']))
+        return found
+    if os.path.isdir('/proc/net'):  # Linux: listening sockets by inode, then which process holds each inode
+        inodes = {}
+        for name in ('tcp', 'tcp6'):
+            try:
+                with open('/proc/net/' + name) as handle:
+                    for line in list(handle)[1:]:
+                        parts = line.split()
+                        if len(parts) > 9 and parts[3] == '0A':  # 0A = LISTEN
+                            inodes[parts[9]] = int(parts[1].rsplit(':', 1)[1], 16)
+            except OSError:
+                pass
+        for pid in filter(str.isdigit, os.listdir('/proc')):
+            try:
+                for fd in os.listdir('/proc/{}/fd'.format(pid)):
+                    target = os.readlink('/proc/{}/fd/{}'.format(pid, fd))
+                    if target.startswith('socket:[') and target[8:-1] in inodes:
+                        found.setdefault(inodes[target[8:-1]], int(pid))
+            except OSError:
+                continue
+        return found
+    try:  # macOS and others
+        output = subprocess.run(['lsof', '-nP', '-iTCP', '-sTCP:LISTEN', '-Fpn'], stdout=subprocess.PIPE, universal_newlines=True).stdout
+    except OSError:
+        return found
+    pid = None
+    for line in output.splitlines():
+        if line.startswith('p'):
+            pid = int(line[1:])
+        elif line.startswith('n') and pid:
+            found.setdefault(int(line.rsplit(':', 1)[1]), pid)
+    return found
+
+
+def running_copies():
+    """[(pid, port)] of Fireworks CRM copies running on this computer, other than this launcher itself."""
+    mine = {os.getpid(), os.getppid()}
+    return sorted((pid, port) for port, pid in listening_ports().items() if pid not in mine and app_running(port))
+
+
+def stop_process(pid):
+    if WINDOWS:
+        subprocess.run(['taskkill', '/F', '/T', '/PID', str(pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return
+    import signal
+    try:
+        os.kill(pid, signal.SIGTERM)
+        for _ in range(50):
+            time.sleep(0.1)
+            os.kill(pid, 0)  # raises once it has gone
+        os.kill(pid, signal.SIGKILL)
+    except OSError:
+        pass
+
+
+def stop_running_copies(reason='Stopping it first, so only one copy runs.', only_port=None):
+    """Stop every running copy of the app (or just the one on only_port). Returns the ports they were using."""
+    copies = [copy for copy in running_copies() if only_port is None or copy[1] == only_port]
+    for pid, port in copies:
+        say('  Found Fireworks CRM running (program {}, port {}). {}'.format(pid, port, reason))
+        stop_process(pid)
+    ports = [port for _, port in copies]
+    for _ in range(100):  # wait until the ports are free again
+        if not any(app_running(port) for port in ports):
+            break
+        time.sleep(0.1)
+    for port in ports:
+        if app_running(port):
+            warn('Could not stop the copy on port {}. Close its window (or press Ctrl+C in it) and try again.'.format(port))
+        else:
+            ok('Stopped the copy that was using port {}.'.format(port))
+    return ports
 
 
 def data_dir_writable(path):
@@ -651,6 +735,8 @@ def cmd_start(args):
     network = args.network or (args.host not in (None, '127.0.0.1', 'localhost'))
     host = args.host or ('0.0.0.0' if network else '127.0.0.1')
     port = args.port or int(os.environ.get('PORT', DEFAULT_PORT))
+    if not args.keep_running:
+        stop_running_copies()
     if app_running(port):
         lan = default_route_ip()
         if network and lan and not reachable_on(lan, port):
@@ -718,6 +804,13 @@ def show_network_addresses(port):
         say('      ' + Style.paint('1', 'http://{}:{}'.format(ip, port)) + label + ('   <- try this first' if n == 0 and len(addresses) > 1 else ''))
     for tip in PHONE_TIPS:
         say('  - ' + tip.format(port=port))
+
+
+def cmd_stop(args):
+    heading('Stopping Fireworks CRM')
+    if not stop_running_copies(reason='Stopping it.', only_port=args.port):
+        say('  Fireworks CRM is not running.')
+    return EXIT_OK
 
 
 def cmd_wifi_check(args):
@@ -901,6 +994,7 @@ MENU = [
     ('6', 'Back up the data now', ['backup']),
     ('7', 'List backups', ['backups']),
     ('8', 'Restore a backup', ['restore']),
+    ('s', 'Stop the app (every running copy)', ['stop']),
     ('9', 'Run the tests', ['test']),
     ('w', 'Phones cannot open the app? Check and fix Wi-Fi sharing', ['wifi-check']),
     ('h', 'Help: every command, for scripts and shortcuts', ['help']),
@@ -970,6 +1064,7 @@ def build_parser():
     start.add_argument('--no-browser', action='store_true', help='do not open the browser')
     start.add_argument('--demo', action='store_true', help='add sample products, customers and bills (only into an empty shop)')
     start.add_argument('--no-backup', action='store_true', help='turn off the automatic daily backup')
+    start.add_argument('--keep-running', action='store_true', help='do not stop a copy that is already running (by default it is stopped first)')
 
     setup = commands.add_parser('setup', parents=[common, admin], help='first-time setup of the administrator')
     setup.add_argument('--force', action='store_true', help='replace (or add) an administrator even if one exists')
@@ -984,6 +1079,7 @@ def build_parser():
     restore = commands.add_parser('restore', parents=[common], help='replace the data with a backup (app must be stopped)')
     restore.add_argument('name', nargs='?', help='backup file name (from "backups"); asks when left out')
     commands.add_parser('test', parents=[common], help='run the automated tests')
+    commands.add_parser('stop', parents=[common], help='stop every running copy of the app (with --port, only that one)')
     commands.add_parser('wifi-check', parents=[common], help='phones cannot open the app? find out why and fix it (Windows: network type and firewall)')
     commands.add_parser('help', parents=[common], help='show this help')
     return parser
@@ -1000,6 +1096,7 @@ EXAMPLES = '''examples:
                                           first run without questions
   check                                   is this computer ready? (exit code 0 = yes)
   wifi-check                              phones cannot open the app: shows why and fixes it
+  stop                                    stop every running copy (start does this by itself first)
   backup / backups / restore NAME         backups from the command line
 
 The administrator password can also come from the FIREWORKS_ADMIN_PASSWORD environment variable.
@@ -1007,7 +1104,7 @@ Exit codes: 0 = done, 1 = problem, 2 = the administrator must be set up first.''
 
 COMMANDS = {'start': cmd_start, 'setup': cmd_setup, 'reset-admin': cmd_setup, 'check': cmd_check, 'install': cmd_install,
             'status': cmd_status, 'backup': cmd_backup, 'backups': cmd_backups, 'restore': cmd_restore, 'test': cmd_test,
-            'wifi-check': cmd_wifi_check}
+            'wifi-check': cmd_wifi_check, 'stop': cmd_stop}
 
 
 def run(parser, argv):

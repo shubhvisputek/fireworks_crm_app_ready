@@ -221,3 +221,71 @@ class SharedOnNetworkTests(unittest.TestCase):
             shared.bind(('0.0.0.0', 0))
             shared.listen()
             self.assertTrue(fireworks.reachable_on(ip, shared.getsockname()[1]))
+
+
+class RunningCopyTests(unittest.TestCase):
+    def setUp(self):
+        sys.path.insert(0, ROOT)
+        import fireworks
+        if fireworks.running_copies():
+            self.skipTest('Fireworks CRM is running on this computer; a test must not stop it')
+        self.tmp = tempfile.mkdtemp(prefix='fwcrm-copies-')
+        self.data = os.path.join(self.tmp, 'data')
+        self.env = {**os.environ, 'FIREWORKS_NO_VENV': '1', 'NO_COLOR': '1'}
+        self.env.pop('FIREWORKS_ADMIN_PASSWORD', None)
+        subprocess.run([sys.executable, LAUNCHER, 'setup', '--data-dir', self.data, '--admin-user', 'owner', '--password-stdin'],
+                       input='Str0ngPass!\n', env=self.env, cwd=ROOT, stdout=subprocess.DEVNULL, universal_newlines=True, check=True)
+        self.processes = []
+
+    def tearDown(self):
+        for process in self.processes:
+            if process.poll() is None:
+                process.kill()
+            process.wait(10)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def spawn(self, args, env=None):
+        process = subprocess.Popen(args, env=env or self.env, cwd=ROOT, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.processes.append(process)
+        return process
+
+    @staticmethod
+    def wait_for(port):
+        for _ in range(80):
+            try:
+                with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/me', timeout=1):
+                    return True
+            except OSError:
+                time.sleep(0.25)
+        return False
+
+    def test_start_stops_an_old_copy_first_and_stop_stops_it(self):
+        if not (sys.platform.startswith('linux') or shutil.which('lsof')):
+            self.skipTest('needs /proc or lsof to find listening programs')
+        port = free_port()
+        old = self.spawn([sys.executable, os.path.join(ROOT, 'server.py')], {**self.env, 'PORT': str(port), 'FIREWORKS_DATA_DIR': self.data})
+        self.assertTrue(self.wait_for(port))
+        with socket.socket() as unrelated:  # another program listening must be left alone
+            unrelated.bind(('127.0.0.1', 0))
+            unrelated.listen()
+            new = self.spawn([sys.executable, LAUNCHER, 'start', '--data-dir', self.data, '--port', str(port), '--no-browser'])
+            old.wait(20)
+            self.assertIsNotNone(old.poll(), 'the old copy was stopped')
+            self.assertTrue(self.wait_for(port), 'and the new one serves on the same port')
+            self.assertIsNone(new.poll())
+            stop = subprocess.run([sys.executable, LAUNCHER, 'stop', '--port', str(port)], env=self.env, cwd=ROOT, stdout=subprocess.PIPE, universal_newlines=True, timeout=60)
+            self.assertIn(f'port {port}', stop.stdout)
+            new.wait(20)
+            self.assertIsNotNone(new.poll())
+            unrelated.getsockname()  # still open: never touched
+
+    def test_only_programs_that_answer_as_the_app_count(self):
+        sys.path.insert(0, ROOT)
+        import fireworks
+        saved = fireworks.listening_ports, fireworks.app_running
+        try:
+            fireworks.listening_ports = lambda: {8000: 4321, 5432: 999, 9000: os.getpid()}
+            fireworks.app_running = lambda port: port in (8000, 9000)
+            self.assertEqual(fireworks.running_copies(), [(4321, 8000)], 'not the database on 5432, not this launcher itself')
+        finally:
+            fireworks.listening_ports, fireworks.app_running = saved
