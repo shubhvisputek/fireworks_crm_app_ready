@@ -5,8 +5,10 @@ setlocal
 cd /d "%~dp0"
 set "FIREWORKS_LAUNCHER=start.bat"
 set "PY="
-py -3 -c "import sys; sys.exit(sys.version_info < (3, 10))" >nul 2>nul && set "PY=py -3"
-if not defined PY python -c "import sys; sys.exit(sys.version_info < (3, 10))" >nul 2>nul && set "PY=python"
+rem "python" first, like the older start files: Windows and antivirus firewall permissions belong to one
+rem python.exe, and "py -3" can pick a different Python that has not been allowed yet.
+python -c "import sys; sys.exit(sys.version_info < (3, 10))" >nul 2>nul && set "PY=python"
+if not defined PY py -3 -c "import sys; sys.exit(sys.version_info < (3, 10))" >nul 2>nul && set "PY=py -3"
 if not defined PY (
   echo Fireworks CRM needs Python 3.10 or newer.
   echo Install it from https://www.python.org/downloads/  ^(tick "Add python.exe to PATH"^)

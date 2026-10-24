@@ -38,7 +38,14 @@ With no options the launcher shows the requirements check, the status (data fold
 - **First run:** it asks for the administrator username, password (typed twice, hidden) and shop name, then starts the app and opens the browser. Weak passwords such as `admin123` are refused.
 - **Forgot the admin password / locked out:** choose **3**, or run `setup --force` (same as `reset-admin`). Type the existing username to give it a new password (it is made an active owner and signed out everywhere), or a new username to add another owner. A leftover demo `admin`/`admin123` account is switched off.
 - **Share on Wi-Fi:** choose **2** or run `start --network`. It shows the addresses to open on phones (for example `http://192.168.1.25:8000`). Use only your own password-protected Wi-Fi; on Windows allow Python on **private** networks only.
+- **Phone can't open it?** Choose **w** in the menu (or run `wifi-check`). It checks the usual causes and fixes them with your permission:
+  - On Windows it marks the shop Wi-Fi as a Private network.
+  - It removes a firewall rule blocking Python. Windows creates that rule when its "Allow access" question is refused or closed.
+  - It opens the port to devices on the same network only. Windows asks once for permission; click **Yes**.
+  - It warns if the app is already running for this computer only (option 1). Close that window and start again with option 2.
+  - Also check that the phone is on the same Wi-Fi (not mobile data or a guest network) and that you typed `http://` and the `:8000`.
 - **If port 8000 is busy** it picks the next free port and says which. If the app is already running it just opens it.
+- **Only one copy at a time:** starting (option 1 or 2) first stops any copy of the app that is already running on this computer, on any port, then starts fresh. It never touches other programs: it only stops a program that answers as Fireworks CRM. Menu **s** (or `stop`) just stops it; `start --keep-running` leaves a running copy alone.
 - **Missing packages:** it offers to install them. If this Python does not allow installing packages (some Linux and Homebrew setups), it creates a private `.venv` folder and uses it automatically from then on.
 
 Every menu item is also a command that runs straight away without questions, for shortcuts and scripts (`python fireworks.py` works on every system too):
