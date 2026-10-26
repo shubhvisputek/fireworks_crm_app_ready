@@ -56,6 +56,10 @@
 | EXPENSES-02 | Add Expense | Valid expense saves | Pending |
 | EXPENSES-03 | Expense validation | Zero/negative amount is rejected | Pending |
 | EXPENSES-04 | Recurring button | Recurring workflow gives expected response | Pending |
+| EXPENSES-05 | Edit expense | Changed fields save and the list updates | Pending |
+| EXPENSES-06 | Delete expense | Confirm dialog, then the entry is removed | Pending |
+| EXPENSES-07 | Own-only rule | Cashier cannot edit/delete another user's expense (403) | Pending |
+| EXPENSES-08 | Recurring manage | Edit, pause/resume and delete a recurring template | Pending |
 | PRICING-01 | Pricing list | Wholesale and cost columns render; retail absent | Pending |
 | PRICING-02 | Change Product Price | Wholesale price version saves | Pending |
 | PRICING-03 | Bulk Price Update | Wholesale percentage update saves | Pending |

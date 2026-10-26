@@ -50,11 +50,29 @@ class ExpenseRepository(Repository):
     def total(self, start, end):
         return self.scalar('SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE expense_date BETWEEN ? AND ?', (start, end), default=0)
 
+    def get(self, expense_id):
+        return self.one('SELECT * FROM expenses WHERE id=?', (expense_id,))
+
+    def update(self, expense_id, values):
+        return self.update_row('expenses', expense_id, values)
+
+    def delete(self, expense_id):
+        return self.execute('DELETE FROM expenses WHERE id=?', (expense_id,)).rowcount
+
     def create_recurring(self, values):
         return self.insert('recurring_expenses', values)
 
     def list_recurring(self):
-        return self.all('SELECT * FROM recurring_expenses ORDER BY id DESC')
+        return self.all('SELECT * FROM recurring_expenses ORDER BY active DESC, id DESC')
+
+    def get_recurring(self, recurring_id):
+        return self.one('SELECT * FROM recurring_expenses WHERE id=?', (recurring_id,))
+
+    def update_recurring(self, recurring_id, values):
+        return self.update_row('recurring_expenses', recurring_id, values)
+
+    def delete_recurring(self, recurring_id):
+        return self.execute('DELETE FROM recurring_expenses WHERE id=?', (recurring_id,)).rowcount
 
 
 class SettingsRepository(Repository):

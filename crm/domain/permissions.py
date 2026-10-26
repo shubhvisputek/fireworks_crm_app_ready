@@ -34,6 +34,7 @@ class Permission(str, Enum):
     DUES_VIEW = 'dues.view'
     EXPENSES_VIEW = 'expenses.view'                # everyone's expenses
     EXPENSES_CREATE = 'expenses.create'
+    EXPENSES_MANAGE = 'expenses.manage'            # edit/delete anyone's expenses and recurring templates
     RECURRING_EXPENSES_VIEW = 'recurring_expenses.view'
     CASH_CLOSING_OWN = 'cash_closing.own'
     CASH_CLOSING_VIEW_ALL = 'cash_closing.view_all'
@@ -56,7 +57,8 @@ PERMISSION_LABELS = {
     P.PRODUCTS_LIST: 'Look up products', P.CATALOG_MANAGE: 'Manage products', P.PRICING_MANAGE: 'Change prices',
     P.INVENTORY_MANAGE: 'Stock adjustments and reorder plan', P.PURCHASES_MANAGE: 'Record purchases (GRN)',
     P.SUPPLIERS_MANAGE: 'Suppliers and supplier payments', P.CUSTOMERS_VIEW: 'See customers', P.CUSTOMERS_MANAGE: 'Add customers',
-    P.DUES_VIEW: 'Credit dues list', P.EXPENSES_VIEW: 'See all expenses', P.EXPENSES_CREATE: 'Add expenses',
+    P.DUES_VIEW: 'Credit dues list', P.EXPENSES_VIEW: 'See all expenses', P.EXPENSES_CREATE: 'Add expenses (and edit or delete own)',
+    P.EXPENSES_MANAGE: 'Edit and delete everyone\'s expenses and recurring expenses',
     P.RECURRING_EXPENSES_VIEW: 'See recurring expenses', P.CASH_CLOSING_OWN: 'Close own cash drawer',
     P.CASH_CLOSING_VIEW_ALL: 'See everyone\'s cash closings', P.REPORTS_EXPORT: 'Excel and PDF reports',
     P.BACKUP_DOWNLOAD: 'Download the full data backup (every bill, customer and the audit log)', P.BACKUP_RESTORE: 'Restore backups (owner only)', P.SETTINGS_MANAGE: 'Business settings',
@@ -71,7 +73,7 @@ ROLE_PERMISSIONS = {
         P.DASHBOARD_VIEW, P.ANALYTICS_VIEW, P.BILLING_CREATE, P.HELD_BILLS_USE, P.HELD_BILLS_DELETE, P.INVOICE_PRINT,
         P.SALES_VIEW_OWN, P.SALES_VIEW, P.SALES_EDIT, P.SALES_VOID, P.RETURNS_CREATE, P.PAYMENTS_COLLECT, P.DISCOUNT_APPROVE,
         P.PRODUCTS_LIST, P.CATALOG_MANAGE, P.INVENTORY_MANAGE, P.PURCHASES_MANAGE, P.SUPPLIERS_MANAGE,
-        P.CUSTOMERS_VIEW, P.CUSTOMERS_MANAGE, P.DUES_VIEW, P.EXPENSES_VIEW, P.EXPENSES_CREATE, P.REPORTS_EXPORT,
+        P.CUSTOMERS_VIEW, P.CUSTOMERS_MANAGE, P.DUES_VIEW, P.EXPENSES_VIEW, P.EXPENSES_CREATE, P.EXPENSES_MANAGE, P.REPORTS_EXPORT,
         P.CASH_CLOSING_OWN, P.CASH_CLOSING_VIEW_ALL,
     }),
     CASHIER: frozenset({
@@ -84,7 +86,7 @@ ROLE_PERMISSIONS = {
     ACCOUNTANT: frozenset({
         P.DASHBOARD_VIEW, P.ANALYTICS_VIEW, P.PROFIT_VIEW, P.INVOICE_PRINT, P.SALES_VIEW_OWN, P.SALES_VIEW,
         P.PAYMENTS_COLLECT, P.PRODUCTS_LIST, P.CUSTOMERS_VIEW, P.DUES_VIEW, P.EXPENSES_VIEW, P.EXPENSES_CREATE,
-        P.RECURRING_EXPENSES_VIEW, P.REPORTS_EXPORT, P.CASH_CLOSING_VIEW_ALL, P.SUPPLIERS_MANAGE,
+        P.EXPENSES_MANAGE, P.RECURRING_EXPENSES_VIEW, P.REPORTS_EXPORT, P.CASH_CLOSING_VIEW_ALL, P.SUPPLIERS_MANAGE,
     }),
     # Accounts created before roles existed keep exactly the access they had.
     STAFF: frozenset({
