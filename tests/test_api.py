@@ -140,7 +140,8 @@ class PermissionTests(ApiTestCase):
                         '/api/recurring-expenses', '/api/inventory/ledger?product_id=1', '/api/backup']
     STAFF_DENIED_POST = ['/api/users', '/api/products', '/api/customers', '/api/settings', '/api/pricing', '/api/inventory/adjust',
                          '/api/inventory/remove', '/api/purchases', '/api/returns', '/api/payments', '/api/invoices/1/void',
-                         '/api/invoices/1/edit', '/api/held-bills/delete/1', '/api/products/1/remove']
+                         '/api/invoices/1/edit', '/api/held-bills/delete/1', '/api/products/1/remove', '/api/recurring-expenses/1/edit',
+                         '/api/recurring-expenses/1/delete']
 
     def test_staff_allowed_reads(self):
         for path in self.STAFF_ALLOWED_GET:
@@ -531,6 +532,44 @@ class ExpenseTests(ApiTestCase):
         res = self.staff.post('/api/recurring-expenses', {'category': 'Rent', 'amount': 100, 'frequency': 'Monthly', 'start_date': '2026-10-01'})
         self.assertEqual(res.status, 200, res.body)
         self.assertEqual(self.admin.get('/api/recurring-expenses').json()[0]['category'], 'Rent')
+
+    def test_edit_and_delete_own(self):
+        eid = self.staff.post('/api/expenses', {'expense_date': '2026-10-05', 'category': 'Rent', 'amount': 2500}).json()['id']
+        self.assertEqual(self.staff.get(f'/api/expenses/{eid}').json()['category'], 'Rent')
+        res = self.staff.post(f'/api/expenses/{eid}/edit', {'expense_date': '2026-10-06', 'category': 'Tea', 'amount': 30, 'payment_mode': 'UPI', 'vendor': 'Chai Stall'})
+        self.assertEqual(res.status, 200, res.body)
+        self.assertEqual((res.json()['expense']['category'], res.json()['expense']['amount'], res.json()['expense']['vendor']), ('Tea', 30, 'Chai Stall'))
+        self.assertEqual(self.staff.post(f'/api/expenses/{eid}/edit', {'category': 'Tea', 'amount': 0}).status, 400)
+        self.assertEqual(self.staff.post(f'/api/expenses/{eid}/delete', {}).status, 200)
+        self.assertEqual(self.staff.get(f'/api/expenses/{eid}').status, 404)
+        self.assertEqual(self.staff.post(f'/api/expenses/{eid}/delete', {}).status, 404)
+        self.assertNotIn(eid, [r['id'] for r in self.staff.get('/api/expenses?start=2026-10-01&end=2026-10-31').json()])
+        actions = [a['action'] for a in self.admin.get('/api/audit?start=1900-01-01&end=2999-12-31&entity=EXPENSE').json()['entries']]
+        for action in ('Expense added', 'Expense edited', 'Expense deleted'):
+            self.assertIn(action, actions)
+
+    def test_only_owner_or_manager_changes_others_expenses(self):
+        eid = self.admin.post('/api/expenses', {'category': 'Rent', 'amount': 2500}).json()['id']
+        self.assertEqual(self.staff.post(f'/api/expenses/{eid}/edit', {'category': 'Rent', 'amount': 1}).status, 403)
+        self.assertEqual(self.staff.post(f'/api/expenses/{eid}/delete', {}).status, 403)
+        self.assertEqual(self.admin.get(f'/api/expenses/{eid}').json()['amount'], 2500)
+        staff_eid = self.staff.post('/api/expenses', {'category': 'Tea', 'amount': 20}).json()['id']
+        self.assertEqual(self.admin.post(f'/api/expenses/{staff_eid}/edit', {'category': 'Tea', 'amount': 25}).status, 200)
+        self.assertEqual(self.admin.post(f'/api/expenses/{staff_eid}/delete', {}).status, 200)
+
+    def test_recurring_edit_pause_delete(self):
+        rid = self.admin.post('/api/recurring-expenses', {'category': 'Rent', 'amount': 100, 'frequency': 'Monthly', 'start_date': '2026-10-01'}).json()['id']
+        self.assertEqual(self.staff.post(f'/api/recurring-expenses/{rid}/edit', {'category': 'Rent', 'amount': 1, 'frequency': 'Monthly', 'start_date': '2026-10-01'}).status, 403)
+        self.assertEqual(self.staff.post(f'/api/recurring-expenses/{rid}/delete', {}).status, 403)
+        res = self.admin.post(f'/api/recurring-expenses/{rid}/edit', {'category': 'Shop rent', 'amount': 120, 'frequency': 'Yearly', 'start_date': '2026-10-01', 'end_date': '2027-09-30'})
+        self.assertEqual(res.status, 200, res.body)
+        self.assertEqual((res.json()['recurring']['category'], res.json()['recurring']['amount'], res.json()['recurring']['frequency']), ('Shop rent', 120, 'Yearly'))
+        self.assertEqual(self.admin.post(f'/api/recurring-expenses/{rid}/edit', {'category': 'X', 'amount': 1, 'frequency': 'Weekly', 'start_date': '2026-10-01', 'end_date': '2026-01-01'}).status, 400)
+        self.assertEqual(self.admin.post(f'/api/recurring-expenses/{rid}/active', {'active': False}).json()['recurring']['active'], 0)
+        self.assertEqual(self.admin.post(f'/api/recurring-expenses/{rid}/active', {'active': True}).json()['recurring']['active'], 1)
+        self.assertEqual(self.admin.post(f'/api/recurring-expenses/{rid}/delete', {}).status, 200)
+        self.assertNotIn(rid, [r['id'] for r in self.admin.get('/api/recurring-expenses').json()])
+        self.assertEqual(self.admin.post(f'/api/recurring-expenses/{rid}/delete', {}).status, 404)
 
 
 class SettingsTests(ApiTestCase):

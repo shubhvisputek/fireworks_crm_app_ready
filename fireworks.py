@@ -575,12 +575,14 @@ def reachable_on(ip, port, timeout=1.0):
 
 # ---- Windows: the network type and the firewall decide whether a phone may connect ---------------------
 FIREWALL_RULE = 'Fireworks CRM (port {})'
-# Inbound rules that block Python itself; one query over all program filters is much faster than checking rule by rule.
-PYTHON_BLOCK_RULES = ("(Get-NetFirewallApplicationFilter | Where-Object Program -like '*python*.exe' | Get-NetFirewallRule | "
-                      "Where-Object { $_.Direction -eq 'Inbound' -and $_.Action -eq 'Block' -and $_.Enabled -eq 'True' })")
+# Inbound rules that block Python itself. Block rules are few, so start from them and look up only their programs
+# (asking every rule for its program can take minutes on a PC with many rules).
+PYTHON_BLOCK_RULES = ("(Get-NetFirewallRule -Direction Inbound -Action Block -Enabled True | "
+                      "Where-Object { ($_ | Get-NetFirewallApplicationFilter).Program -like '*python*.exe' })")
+POWERSHELL_ERRORS = []  # what went wrong in the last checks, shown so the person can pass it on
 
 
-def powershell(script, timeout=25):
+def powershell(script, timeout=60):
     """Run a PowerShell script (passed encoded, so no quoting problems). Returns (exit code, output)."""
     import base64
     encoded = base64.b64encode(script.encode('utf-16-le')).decode('ascii')
@@ -592,25 +594,32 @@ def powershell(script, timeout=25):
         return 1, str(error)
 
 
-def powershell_json(script):
-    code, output = powershell("$ErrorActionPreference = 'SilentlyContinue'; " + script + " | ConvertTo-Json -Compress -Depth 4")
-    if code != 0 or not output.strip():
-        return None
-    try:
-        return json.loads(output.strip().splitlines()[-1])
-    except ValueError:
-        return None
+def powershell_json(script, label='query'):
+    """Run a PowerShell expression and return its value (wrapped, so an empty list still comes back as [])."""
+    code, output = powershell("$ErrorActionPreference = 'SilentlyContinue'; @{ value = (" + script + ") } | ConvertTo-Json -Compress -Depth 4")
+    if code == 0 and output.strip():
+        try:
+            return json.loads(output.strip().splitlines()[-1])['value']
+        except (ValueError, KeyError, TypeError):
+            pass
+    POWERSHELL_ERRORS.append('{}: {}'.format(label, ' '.join(output.split())[-300:] or 'no answer (exit code {})'.format(code)))
+    return None
 
 
 def windows_network_state(port):
-    """What Windows currently allows: network types, firewall rules that block Python, and our allow rule."""
-    return powershell_json("""
-        $profiles = @(Get-NetConnectionProfile | ForEach-Object { @{ name = $_.InterfaceAlias; category = [string]$_.NetworkCategory } })
-        $blocked = @(%s | ForEach-Object { $_.DisplayName })
-        $allow = [bool](Get-NetFirewallRule -DisplayName '%s' -Enabled True)
-        $security = @(Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntiVirusProduct | ForEach-Object { $_.displayName }) +
-                    @(Get-CimInstance -Namespace root/SecurityCenter2 -ClassName FirewallProduct | ForEach-Object { $_.displayName })
-        @{ profiles = $profiles; blocked = $blocked; allow = $allow; security = $security }""" % (PYTHON_BLOCK_RULES, FIREWALL_RULE.format(port)))
+    """What Windows currently allows: network types, firewall rules that block Python, our allow rule, and other
+    security software. Each part is asked separately, so one slow or failing part doesn't hide the rest; a part that
+    could not be read is None. Returns None only if nothing could be read."""
+    del POWERSHELL_ERRORS[:]
+    queries = {
+        'profiles': "@(Get-NetConnectionProfile | ForEach-Object { @{ name = $_.InterfaceAlias; category = [string]$_.NetworkCategory } })",
+        'blocked': "@({} | ForEach-Object {{ $_.DisplayName }})".format(PYTHON_BLOCK_RULES),
+        'allow': "[bool](Get-NetFirewallRule -DisplayName '{}' -Enabled True)".format(FIREWALL_RULE.format(port)),
+        'security': "@(Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntiVirusProduct | ForEach-Object { $_.displayName }) + "
+                    "@(Get-CimInstance -Namespace root/SecurityCenter2 -ClassName FirewallProduct | ForEach-Object { $_.displayName })",
+    }
+    state = {key: powershell_json(script, key) for key, script in queries.items()}
+    return state if any(value is not None for value in state.values()) else None
 
 
 def wifi_problems(state):
@@ -623,7 +632,7 @@ def wifi_problems(state):
         problems.append('Windows treats "{}" as a Public network, so it blocks phones and other devices.'.format(', '.join(public)))
     if state.get('blocked'):
         problems.append('Windows Firewall has a rule blocking Python (made when its "Allow access" question was refused or closed).')
-    if not state.get('allow'):
+    if state.get('allow') is False:  # None = could not be read, which is reported separately
         problems.append('Windows Firewall has no rule letting devices on the shop Wi-Fi reach the app.')
     return problems
 
@@ -675,8 +684,11 @@ def run_as_admin(script):
 def check_windows_wifi(port, assume_yes=False):
     """Find and (with permission) fix what stops phones reaching the app. Returns True when nothing is in the way."""
     state = windows_network_state(port)
+    for error in POWERSHELL_ERRORS:
+        warn('Could not check {}'.format(error))
     if state is None:
-        warn('Could not read the Windows network settings; if phones cannot connect, run "{} wifi-check".'.format(command_name()))
+        warn('Could not read the Windows network settings (details above). Phones may still work; if not, '
+             'run "{} wifi-check" and send the messages above.'.format(command_name()))
         return False
     problems = wifi_problems(state)
     say('  Python program in use: {}'.format(python_program()))

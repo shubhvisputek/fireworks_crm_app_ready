@@ -279,9 +279,28 @@ try {
     await submitModal(page, { category: 'Rent', amount: 2500, payment_mode: 'UPI' });
     assert.match(await toastText(page), /Expense saved/);
     assert.match(await page.innerText('#page'), /Rent/);
+    await page.click('tr:has-text("Rent") button:has-text("Edit")');
+    await submitModal(page, { category: 'Shop rent', amount: 2600 });
+    assert.match(await toastText(page), /Expense updated/);
+    assert.match(await page.innerText('#page'), /Shop rent[\s\S]*2,600\.00/);
     await page.click('button:has-text("+ Recurring")');
     await submitModal(page, { category: 'Electricity', amount: 900, frequency: 'Monthly' });
     assert.match(await toastText(page), /Recurring expense saved/);
+    assert.match(await page.innerText('tr:has-text("Electricity")'), /Active/);
+    await page.click('tr:has-text("Electricity") button:has-text("Pause")');
+    assert.match(await toastText(page), /paused/);
+    assert.match(await page.innerText('tr:has-text("Electricity")'), /Paused/);
+    await page.click('tr:has-text("Electricity") button:has-text("Edit")');
+    await submitModal(page, { amount: 950 });
+    assert.match(await toastText(page), /Recurring expense updated/);
+    await page.click('tr:has-text("Electricity") button:has-text("Delete")');
+    await page.click('[data-confirm="yes"]');
+    assert.match(await toastText(page), /Recurring expense deleted/);
+    assert.doesNotMatch(await page.innerText('#page'), /Electricity/);
+    await page.click('tr:has-text("Shop rent") button:has-text("Delete")');
+    await page.click('[data-confirm="yes"]');
+    assert.match(await toastText(page), /Expense deleted/);
+    assert.doesNotMatch(await page.innerText('#page'), /Shop rent/);
   });
 
   await step('pricing', async () => {

@@ -31,3 +31,7 @@ class Repository:
         placeholders = ', '.join('?' for _ in values)
         cursor = self.conn.execute(f'INSERT INTO {table} ({columns}) VALUES ({placeholders})', tuple(values.values()))
         return cursor.lastrowid
+
+    def update_row(self, table, row_id, values):
+        assignments = ', '.join(f'{column}=?' for column in values)
+        return self.conn.execute(f'UPDATE {table} SET {assignments} WHERE id=?', (*values.values(), row_id)).rowcount

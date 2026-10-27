@@ -88,7 +88,7 @@ class RoleMatrixTests(RoleTestCase):
             ('GET', '/api/suppliers'): {'MANAGER', 'STOCK_KEEPER', 'ACCOUNTANT'},
             ('GET', '/api/reorder-plan'): {'MANAGER', 'STOCK_KEEPER'},
             ('GET', '/api/expenses'): {'MANAGER', 'CASHIER', 'ACCOUNTANT'},
-            ('GET', '/api/recurring-expenses'): {'ACCOUNTANT'},
+            ('GET', '/api/recurring-expenses'): {'MANAGER', 'ACCOUNTANT'},
             ('GET', '/api/cash-closing/summary'): {'MANAGER', 'CASHIER'},
             ('GET', '/api/cash-closings'): {'MANAGER', 'CASHIER', 'ACCOUNTANT'},
             ('GET', '/api/export/sales.xlsx'): {'MANAGER', 'ACCOUNTANT'},
