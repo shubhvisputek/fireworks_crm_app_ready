@@ -6,7 +6,7 @@ import { dateTime, money, num, todayISO } from '../core/format.js';
 import { can, findProduct, loadReferenceData, state } from '../core/state.js';
 import { go, registerPage } from '../core/router.js';
 import { closeModal, confirmDialog, field, openModal, toast } from '../ui/feedback.js';
-import { table } from '../ui/widgets.js';
+import { brandTag, table } from '../ui/widgets.js';
 import { loadInvoiceForEdit } from '../billing/bill.js';
 import { WHATSAPP_ENABLED, billMessage, openWhatsapp } from '../ui/share.js';
 
@@ -112,9 +112,9 @@ registerActions({
           returned goods come off that first, and only the rest is paid back.</p>` : ''}
         ${items.map((item) => {
           const left = Math.max(0, item.qty_input - (item.returned_qty || 0));
-          return html`<div class="between notice" style="margin-bottom:6px"><span>${item.product_name_snapshot}
+          return html`<div class="between notice" style="margin-bottom:6px"><span>${item.product_name_snapshot}${brandTag(item.brand_snapshot)}
           <div class="small muted">Sold ${num(item.qty_input)} ${item.sell_unit}${item.returned_qty ? ` • already returned ${num(item.returned_qty)} • ${num(left)} left` : ''}</div></span>
-          <input class="input return-qty" aria-label="Return quantity for ${item.product_name_snapshot}" data-item="${item.id}" style="width:100px"
+          <input class="input return-qty" aria-label="Return quantity for ${item.brand_snapshot ? `${item.product_name_snapshot} (${item.brand_snapshot})` : item.product_name_snapshot}" data-item="${item.id}" style="width:100px"
             type="number" min="0" max="${left}" step="0.01" value="0" ${left ? '' : html`disabled`}></div>`;
         })}
         <label>Reason<textarea class="textarea" name="reason"></textarea></label><br>

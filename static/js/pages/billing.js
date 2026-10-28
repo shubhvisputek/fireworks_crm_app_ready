@@ -1,6 +1,7 @@
 // Counter billing: search, cart, discount, hold/resume, payment, and editing a finalized bill.
 import { api } from '../core/api.js';
 import { $, $$, html, setHtml } from '../core/html.js';
+import { brandTag } from '../ui/widgets.js';
 import { registerActions } from '../core/actions.js';
 import { money, num, dateTime } from '../core/format.js';
 import { can, loadReferenceData, state } from '../core/state.js';
@@ -67,10 +68,12 @@ function renderCart() {
   setHtml(cart, totals.lines.length ? html`<div class="cart-grid">
       <div class="cart-header"><span>Product</span><span>Qty</span><span>Unit</span><span>Price</span><span>Amount</span><span></span></div>
       ${totals.lines.map((line, index) => html`<div class="cart-row">
-        <div class="cart-product"><strong>${line.product?.name || 'Unknown product'}</strong>
-          <div class="small muted">${line.product?.sku} • Available ${num(line.product?.current_stock_base)} • Discount ${money(line.discount)}</div></div>
+        <div class="cart-product"><strong>${line.product?.name || 'Unknown product'}</strong>${brandTag(line.product?.brand)}</div>
+        <div class="cart-meta small muted">${line.product?.sku}<span class="cart-phone-only"> • ${money(line.price)}/${line.product?.unit}</span> • ${num(line.product?.current_stock_base)} in stock${line.discount ? html` • Discount ${money(line.discount)}` : ''}</div>
         <div class="cart-field cart-quantity"><span class="cart-field-label">Qty</span>
-          <input class="input" aria-label="Quantity" type="number" min="0.01" step="0.01" value="${line.qty}" data-change="billing.qty" data-index="${index}"></div>
+          <div class="qty-stepper"><button type="button" class="qty-step" aria-label="Less of ${line.product?.name}" data-action="billing.qtyStep" data-index="${index}" data-delta="-1">−</button>
+            <input class="input" aria-label="Quantity" type="number" inputmode="decimal" min="0.01" step="0.01" value="${line.qty}" data-change="billing.qty" data-index="${index}">
+            <button type="button" class="qty-step" aria-label="More of ${line.product?.name}" data-action="billing.qtyStep" data-index="${index}" data-delta="1">+</button></div></div>
         <div class="cart-field cart-unit"><span class="cart-field-label">Unit</span><span class="cart-field-value">${line.product?.unit}</span></div>
         <div class="cart-field cart-price"><span class="cart-field-label">Price</span><span class="right">${money(line.price)}</span></div>
         <div class="cart-line-total"><span class="cart-field-label">Amount</span><strong class="right">${money(line.net)}</strong></div>
@@ -100,10 +103,11 @@ function searchMatches(query) {
   const rank = (p) => {
     const sku = String(p.sku).toLowerCase();
     const name = String(p.name).toLowerCase();
+    const brand = String(p.brand || '').toLowerCase();
     if (sku === q || String(p.barcode || '').toLowerCase() === q) return 0;
     if (sku.startsWith(q)) return 1;
     if (name.startsWith(q)) return 2;
-    return sku.includes(q) || name.includes(q) ? 3 : -1;
+    return sku.includes(q) || name.includes(q) ? 3 : brand.includes(q) ? 4 : -1;
   };
   return state.products
     .map((p) => ({ p, r: rank(p) }))
@@ -248,7 +252,7 @@ registerActions({
     if (!el.value.trim()) return hideSearch();
     searchIndex = 0;
     setHtml(box, matches.length ? matches.map((p, i) => html`<div class="product-result ${i === 0 ? 'active' : ''}" data-action="billing.add" data-id="${p.id}">
-        <div><strong>${p.name}</strong><div class="small muted">${p.sku} • Stock ${num(p.current_stock_base)}</div></div>
+        <div><strong>${p.name}</strong>${brandTag(p.brand)}<div class="small muted">${p.sku} • Stock ${num(p.current_stock_base)}</div></div>
         <div class="right">${money(p.default_unit_price)}<div class="small muted">per ${p.unit}</div></div></div>`) : html`<div class="small muted">No product found</div>`);
     box.classList.remove('hide');
   },
@@ -271,6 +275,13 @@ registerActions({
     const qty = Number(el.value);
     bill.items[Number(el.dataset.index)].qty = qty > 0 ? qty : 1;
     scheduleCartRender();
+  },
+  // Whole-number steps; a fractional quantity rounds to the nearest whole number first. Never below 1: use × to drop the line.
+  'billing.qtyStep': (el) => {
+    const item = bill.items[Number(el.dataset.index)];
+    if (!item) return;
+    item.qty = Math.max(1, Math.round(Number(item.qty) || 1) + Number(el.dataset.delta));
+    renderCart();
   },
   'billing.remove': (el) => {
     bill.items.splice(Number(el.dataset.index), 1);

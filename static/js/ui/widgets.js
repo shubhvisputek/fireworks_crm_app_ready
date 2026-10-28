@@ -34,7 +34,11 @@ export function barChart(points, emptyText = 'No data in this period.') {
     html`<div class="bar" style="height:${Math.max(8, (p.value / max) * 88)}%" title="${p.label}: ${money(p.value)}"><b>${money(p.value)}</b><span>${p.label}</span></div>`)}</div></div>`;
 }
 
+// Products are shown with their brand / company everywhere: two companies can sell a same-named item at different prices.
+export const brandTag = (brand) => (brand ? html` <span class="tag company">${brand}</span>` : '');
+export const productTitle = (p) => html`<strong>${p.name}</strong>${brandTag(p.brand)}`;
+export const productText = (p, brand = p.brand) => (brand ? `${p.name} (${brand})` : String(p.name));
 export const productOptions = (products = state.products) =>
-  products.map((p) => [p.id, `${p.sku} • ${p.name} (stock ${num(p.current_stock_base)})`]);
+  products.map((p) => [p.id, `${p.sku} • ${productText(p)} (stock ${num(p.current_stock_base)})`]);
 
 export const errorBox = (error) => html`<div class="notice bad">${error.message || String(error)}</div>`;

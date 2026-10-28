@@ -139,7 +139,7 @@ class InventoryService(Service):
             stock = max(float(product['current_stock_base']), 0)
             target = math.ceil(last * (1 + growth / 100)) if last else 0
             suggested = max(0, target - stock)
-            rows.append({'product_id': product['id'], 'sku': product['sku'], 'name': product['name'], 'unit': product['unit'],
+            rows.append({'product_id': product['id'], 'sku': product['sku'], 'name': product['name'], 'brand': product.get('brand'), 'unit': product['unit'],
                          'sold_last_season': last, 'stock': stock, 'target': target, 'suggested': suggested,
                          'cost': money(suggested * float(product['cost_price'] or 0))})
         rows.sort(key=lambda row: (-row['suggested'], row['sku']))

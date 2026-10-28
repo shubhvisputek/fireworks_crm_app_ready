@@ -7,7 +7,7 @@ import { registerActions } from '../core/actions.js';
 import { money, num, todayISO } from '../core/format.js';
 import { registerPage } from '../core/router.js';
 import { can } from '../core/state.js';
-import { errorBox, table } from '../ui/widgets.js';
+import { brandTag, errorBox, productText, table } from '../ui/widgets.js';
 import {
   OTHER, SERIES, barList, previousColor, columnChart, heatmap, legend, lineChart, meter, ordinalColor, pct, resetCharts,
   stackedBar, statTile, waterfall, withTable,
@@ -97,11 +97,11 @@ function attention(d) {
   const items = [];
   if (t?.storage?.over) items.push(html`<div class="notice bad">⚠ <strong>Licence storage exceeded:</strong> ${num(t.storage.current_kg)} kg stored, limit ${num(t.storage.limit_kg)} kg.</div>`);
   for (const x of t?.attention || []) {
-    items.push(html`<div class="between notice ${x.stock <= 0 ? 'bad' : 'warn'}"><span>${x.stock <= 0 ? '⛔' : '⚠'} <strong>${x.name}</strong><br>
+    items.push(html`<div class="between notice ${x.stock <= 0 ? 'bad' : 'warn'}"><span>${x.stock <= 0 ? '⛔' : '⚠'} <strong>${x.name}</strong>${brandTag(x.brand)}<br>
       <span class="small muted">${x.sku} • Refill at ${num(x.reorder_level)} units</span></span><strong>${num(x.stock)} left</strong></div>`);
   }
   for (const x of d.stock?.running_out?.slice(0, 3) || []) {
-    items.push(html`<div class="between notice warn"><span>⏳ <strong>${x.name}</strong><br><span class="small muted">Selling ${num(x.per_day)} a day</span></span>
+    items.push(html`<div class="between notice warn"><span>⏳ <strong>${x.name}</strong>${brandTag(x.brand)}<br><span class="small muted">Selling ${num(x.per_day)} a day</span></span>
       <strong>~${num(Math.floor(x.days_left))} days left</strong></div>`);
   }
   const ex = d.sales.exceptions;
@@ -120,7 +120,7 @@ function overview(d) {
     </div>
     <div class="grid two">
       ${card('How customers paid', stackedBar(d.sales.payments.map((x) => ({ label: x.mode, value: x.amount, color: paymentColor(x.mode) }))))}
-      ${card('Top products', barList(d.products.top.slice(0, 5).map((x) => ({ label: x.name, value: x.revenue, sub: `${num(x.qty)} sold` })), { name: 'Revenue' }))}
+      ${card('Top products', barList(d.products.top.slice(0, 5).map((x) => ({ label: productText(x), value: x.revenue, sub: `${num(x.qty)} sold` })), { name: 'Revenue' }))}
     </div>
     ${attention(d)}`;
 }
@@ -158,16 +158,16 @@ function products(d) {
   const pr = d.products;
   const color = categoryColors(d);
   const profit = has(pr.top[0], 'profit');
-  const productRows = (rows) => rows.map((x) => html`<tr><td>${x.name}<div class="small muted">${x.sku}</div></td><td>${num(x.qty)}</td>
+  const productRows = (rows) => rows.map((x) => html`<tr><td>${x.name}${brandTag(x.brand)}<div class="small muted">${x.sku}</div></td><td>${num(x.qty)}</td>
     <td>${money(x.revenue)}</td>${profit ? html`<td>${pct(x.gross_margin)}</td>` : ''}<td>${pct(x.share)}</td></tr>`);
   const headers = ['Product', 'Qty', 'Revenue', ...(profit ? ['Margin'] : []), 'Share'];
-  const moverRows = (rows) => rows.map((x) => html`<tr><td>${x.name}</td><td>${money(x.prev_revenue)}</td><td>${money(x.revenue)}</td>
+  const moverRows = (rows) => rows.map((x) => html`<tr><td>${x.name}${brandTag(x.brand)}</td><td>${money(x.prev_revenue)}</td><td>${money(x.revenue)}</td>
     <td class="${x.change > 0 ? 'up' : 'down'}">${x.change > 0 ? '▲' : '▼'} ${money(Math.abs(x.change))}</td></tr>`);
   return html`<div class="grid kpis">
       ${statTile({ label: 'Products sold', value: num(pr.sold_count), sub: 'Different products on bills' })}
       ${statTile({ label: 'Sales concentration', value: pct(pr.concentration.share), sub: `of revenue from the top ${pr.concentration.top_products} products` })}
       ${statTile({ label: 'Best category', value: pr.categories[0]?.category || '—', sub: pr.categories[0] ? `${money(pr.categories[0].revenue)} • ${pct(pr.categories[0].share)}` : '' })}
-      ${statTile({ label: 'Best seller', value: pr.top[0]?.name || '—', sub: pr.top[0] ? `${num(pr.top[0].qty)} sold • ${money(pr.top[0].revenue)}` : '' })}
+      ${statTile({ label: 'Best seller', value: pr.top[0]?.name || '—', sub: pr.top[0] ? [pr.top[0].brand, `${num(pr.top[0].qty)} sold`, money(pr.top[0].revenue)].filter(Boolean).join(' • ') : '' })}
     </div>
     <div class="grid two">
       ${card('Revenue by category', withTable(
@@ -175,11 +175,11 @@ function products(d) {
           ${barList(pr.categories.map((c) => ({ label: c.category, value: c.revenue, color: color(c.category), sub: `${num(c.qty)} sold${has(c, 'gross_margin') ? ` • ${pct(c.gross_margin)} margin` : ''}` })), { name: 'Revenue' })}`,
         ['Category', 'Revenue', 'Qty', ...(profit ? ['Gross profit', 'Margin'] : []), 'Share'],
         pr.categories.map((c) => [c.category, money(c.revenue), num(c.qty), ...(profit ? [money(c.profit), pct(c.gross_margin)] : []), pct(c.share)])))}
-      ${card('Top 10 products by revenue', barList(pr.top.map((x) => ({ label: x.name, value: x.revenue, color: color(x.category), sub: `${num(x.qty)} sold • ${pct(x.share)}` })), { name: 'Revenue' }),
+      ${card('Top 10 products by revenue', barList(pr.top.map((x) => ({ label: productText(x), value: x.revenue, color: color(x.category), sub: `${num(x.qty)} sold • ${pct(x.share)}` })), { name: 'Revenue' }),
         'Bar colour = category')}
     </div>
     <div class="grid two">
-    ${profit ? card('Most profitable products', barList([...pr.top].sort((a, b) => b.profit - a.profit).map((x) => ({ label: x.name, value: x.profit, color: color(x.category), sub: `${pct(x.gross_margin)} margin` })), { name: 'Gross profit' }),
+    ${profit ? card('Most profitable products', barList([...pr.top].sort((a, b) => b.profit - a.profit).map((x) => ({ label: productText(x), value: x.profit, color: color(x.category), sub: `${pct(x.gross_margin)} margin` })), { name: 'Gross profit' }),
       'Among the top 10 by revenue') : ''}
       <div class="grid">
         ${card('Rising vs previous period', table(['Product', 'Before', 'Now', 'Change'], moverRows(pr.rising), 'No product sold more than last period.'))}
@@ -241,10 +241,10 @@ function stock(d) {
       s.categories.map((c) => [c.category, c.products, num(c.units), money(c.retail_value), ...(atCost ? [money(c.inventory_cost)] : []), c.out_of_stock, c.low])),
       'At selling price; current stock, not limited to the period')}
     <div class="grid two">
-      ${card('Running out soon', table(['Product', 'Stock', 'Sells per day', 'Days left'], s.running_out.map((x) => html`<tr><td>${x.name}<div class="small muted">${x.sku}</div></td>
+      ${card('Running out soon', table(['Product', 'Stock', 'Sells per day', 'Days left'], s.running_out.map((x) => html`<tr><td>${x.name}${brandTag(x.brand)}<div class="small muted">${x.sku}</div></td>
         <td>${num(x.stock)}</td><td>${num(x.per_day)}</td><td><span class="tag ${x.days_left <= 3 ? 'bad' : 'warn'}">${x.days_left <= 3 ? '⛔' : '⚠'} ${num(Math.floor(x.days_left))}</span></td></tr>`),
         '✓ Nothing runs out in the next 14 days at the current pace.'), 'At the last 30 days’ pace')}
-      ${card('Not selling', table(['Product', 'Stock', 'Value', 'Last sold'], s.dead_stock.map((x) => html`<tr><td>${x.name}<div class="small muted">${x.sku}</div></td>
+      ${card('Not selling', table(['Product', 'Stock', 'Value', 'Last sold'], s.dead_stock.map((x) => html`<tr><td>${x.name}${brandTag(x.brand)}<div class="small muted">${x.sku}</div></td>
         <td>${num(x.stock)}</td><td>${money(x.retail_value)}</td><td>${x.last_sale ? shortDate(x.last_sale) : 'Never'}</td></tr>`),
         `✓ Every product in stock sold in the last ${s.dead_stock_days} days.`), `In stock, no sale in ${s.dead_stock_days} days`)}
     </div>`;

@@ -24,9 +24,9 @@ const bySku = (a, b) => String(a.sku).localeCompare(String(b.sku), undefined, { 
 function productRows() {
   const q = query.trim().toLowerCase();
   const rows = state.products
-    .filter((p) => !q || [p.sku, p.name, p.category].some((value) => String(value || '').toLowerCase().includes(q)))
+    .filter((p) => !q || [p.sku, p.name, p.category, p.brand].some((value) => String(value || '').toLowerCase().includes(q)))
     .sort(bySku);
-  return rows.map((p) => html`<tr><td>${p.sku}${p.barcode ? html`<div class="small muted">${p.barcode}</div>` : ''}</td><td><strong>${p.name}</strong></td><td>${p.category || ''}</td><td>${p.unit}</td>
+  return rows.map((p) => html`<tr><td>${p.sku}${p.barcode ? html`<div class="small muted">${p.barcode}</div>` : ''}</td><td><strong>${p.name}</strong>${p.brand ? html`<div class="small muted">${p.brand}</div>` : ''}</td><td>${p.category || ''}</td><td>${p.unit}</td>
     <td>${money(p.default_unit_price)}</td><td>${num(p.current_stock_base)}</td><td>${p.status}</td>
     <td><button class="button" data-action="products.view" data-id="${p.id}">View</button></td></tr>`);
 }
@@ -47,7 +47,7 @@ function render() {
 export async function showProductDetail(productId, onChange) {
   const d = await api.get(`/api/products/${productId}`);
   const p = d.product;
-  openModal(p.name, html`<div class="grid two">
+  openModal(p.brand ? `${p.name} — ${p.brand}` : p.name, html`<div class="grid two">
       <div class="notice">Product ID <strong>${p.sku}</strong></div><div class="notice">Available Stock <strong>${num(d.stock)} ${p.unit}</strong></div>
       <div class="notice">Default Unit Price <strong>${money(p.default_unit_price)}</strong></div>
       ${'cost_price' in p ? html`<div class="notice">Cost Price <strong>${money(p.cost_price)}</strong></div>` : ''}

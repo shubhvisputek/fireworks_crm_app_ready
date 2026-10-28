@@ -7,8 +7,8 @@ class ProductRepository(Repository):
     def list(self, status='ACTIVE', query='', category='', limit=200):
         where, params = ['p.status=?'], [status]
         if query:
-            where.append('(p.name LIKE ? OR p.sku LIKE ? OR p.barcode LIKE ? OR p.category LIKE ?)')
-            params += [f'%{query}%'] * 4
+            where.append('(p.name LIKE ? OR p.sku LIKE ? OR p.barcode LIKE ? OR p.category LIKE ? OR p.brand LIKE ?)')
+            params += [f'%{query}%'] * 5
         if category:
             where.append('p.category=?')
             params.append(category)
