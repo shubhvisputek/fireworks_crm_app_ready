@@ -97,7 +97,7 @@ class InvoicePdf:
     def _item(self, x, y, item):
         c = self.c
         c.setFont('Helvetica', 7)
-        c.drawString(x, y, fit_text(f"{item['sku_snapshot']} {item['product_name_snapshot']}", 'Helvetica', 7, 35 * mm))
+        c.drawString(x, y, fit_text(f"{item['sku_snapshot']} {item_title(item)}", 'Helvetica', 7, 35 * mm))
         c.drawRightString(x + 38 * mm, y, f"{item['qty_input']:g}")
         c.drawRightString(x + 59 * mm, y, f"{item['unit_price']:.2f}")
         c.drawRightString(x + COLUMN_W, y, f"{item['unit_price'] * item['qty_input']:,.2f}")
@@ -141,6 +141,12 @@ class InvoicePdf:
 
 def invoice_pdf(invoice, items, payments, settings):
     return InvoicePdf(invoice, items, payments, settings).render()
+
+
+def item_title(item):
+    """Product name with its brand / company, so same-named products from different companies read differently on the bill."""
+    brand = item.get('brand_snapshot') if hasattr(item, 'get') else item['brand_snapshot']
+    return f"{item['product_name_snapshot']} ({brand})" if brand else str(item['product_name_snapshot'])
 
 
 def sales_report_pdf(invoices, business_name):
@@ -229,7 +235,7 @@ def receipt_pdf(invoice, items, payments, settings):
         text('CANCELLED', 'Helvetica-Bold', 9, 'center')
     rule()
     for item in items:
-        text(f"{item['product_name_snapshot']}", size=8)
+        text(item_title(item), size=8)
         pair(f"  {item['qty_input']:g} x {item['unit_price']:.2f}", f"{item['unit_price'] * item['qty_input']:,.2f}")
     rule()
     for label, value in totals:

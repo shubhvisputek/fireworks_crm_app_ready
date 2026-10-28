@@ -117,6 +117,7 @@ class SalesService(Service):
                 cost = float(product['cost_price'] or 0)
                 self.repos.invoices.add_item({
                     'invoice_id': invoice_id, 'product_id': product['id'], 'sku_snapshot': product['sku'], 'product_name_snapshot': product['name'],
+                    'brand_snapshot': product.get('brand') or None,
                     'hsn_snapshot': None, 'qty_input': line['qty'], 'sell_unit': product['unit'], 'qty_base': line['qty'],
                     'unit_price': line['price'], 'original_price': line['price'], 'discount': line['discount'], 'taxable_amount': line['net'],
                     'gst_rate': 0, 'cess_rate': 0, 'gst_amount': 0,  # no tax in this app; old columns that must be filled

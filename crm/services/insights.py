@@ -183,7 +183,7 @@ class InsightService(Service):
             if rate > 0:
                 cover = max(item['stock'], 0) / rate
                 if cover <= 14:
-                    running_out.append({'name': item['name'], 'sku': item['sku'], 'stock': item['stock'],
+                    running_out.append({'name': item['name'], 'sku': item['sku'], 'brand': item.get('brand'), 'stock': item['stock'],
                                         'per_day': money(rate), 'days_left': money(cover)})
         running_out.sort(key=lambda item: item['days_left'])
         dead_since = (today - dt.timedelta(days=DEAD_STOCK_DAYS)).isoformat()

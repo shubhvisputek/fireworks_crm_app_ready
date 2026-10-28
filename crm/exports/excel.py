@@ -59,14 +59,14 @@ def sales_detailed(invoices, items, payments, include_profit=True):
                         inv['status'], inv['notes'], inv['billed_by_name'], inv['edited_by_name'], inv['edited_at'],
                         inv['revised_from_number'], inv['revision_reason']])
     item_sheet = workbook.create_sheet('Sale Items')
-    item_sheet.append(['Invoice', 'Date', 'Customer', 'SKU', 'Product', 'Quantity', 'Unit', 'Base Quantity', 'Unit Price', 'Discount',
+    item_sheet.append(['Invoice', 'Date', 'Customer', 'SKU', 'Product', 'Brand / Company', 'Quantity', 'Unit', 'Base Quantity', 'Unit Price', 'Discount',
                        'Line Total'] + (['Cost Total', 'Gross Profit'] if include_profit else []))
     for row in items:
         line_total = money(row['unit_price'] * row['qty_input'] - row['discount'])
         cost_total = money(row['cost_snapshot'] * row['qty_input'])
         profit_columns = [cost_total, money(line_total - cost_total)] if include_profit else []
         _append(item_sheet, [row['invoice_number'], row['invoice_date'], row['customer_name_snapshot'], row['sku_snapshot'],
-                             row['product_name_snapshot'], row['qty_input'], row['sell_unit'], row['qty_base'], row['unit_price'],
+                             row['product_name_snapshot'], row['brand_snapshot'], row['qty_input'], row['sell_unit'], row['qty_base'], row['unit_price'],
                              row['discount'], line_total] + profit_columns)
     payment_sheet = workbook.create_sheet('Payments')
     payment_sheet.append(['Invoice', 'Sale Date', 'Customer', 'Payment Date', 'Mode', 'Amount', 'Reference', 'Notes'])

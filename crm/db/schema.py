@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS invoices (
 CREATE INDEX IF NOT EXISTS idx_invoice_date_status ON invoices(invoice_date, status);
 CREATE TABLE IF NOT EXISTS invoice_items (
   id INTEGER PRIMARY KEY, invoice_id INTEGER NOT NULL REFERENCES invoices(id), product_id INTEGER NOT NULL REFERENCES products(id),
-  sku_snapshot TEXT NOT NULL, product_name_snapshot TEXT NOT NULL, hsn_snapshot TEXT, qty_input REAL NOT NULL, sell_unit TEXT NOT NULL,
+  sku_snapshot TEXT NOT NULL, product_name_snapshot TEXT NOT NULL, brand_snapshot TEXT, hsn_snapshot TEXT, qty_input REAL NOT NULL, sell_unit TEXT NOT NULL,
   qty_base REAL NOT NULL, unit_price REAL NOT NULL, original_price REAL NOT NULL, discount REAL NOT NULL,
   taxable_amount REAL NOT NULL, gst_rate REAL NOT NULL, cess_rate REAL NOT NULL, gst_amount REAL NOT NULL,
   cost_snapshot REAL NOT NULL, manual_override_reason TEXT
@@ -194,8 +194,15 @@ def _m7_return_credit(conn):
     _add_missing_columns(conn, 'returns', {'credit_adjusted': 'REAL NOT NULL DEFAULT 0'})
 
 
+def _m8_brand_snapshot(conn):
+    """Bill lines remember the product's brand / company, so same-named products from different companies stay apart."""
+    _add_missing_columns(conn, 'invoice_items', {'brand_snapshot': 'TEXT'})
+    conn.execute('''UPDATE invoice_items SET brand_snapshot=(SELECT p.brand FROM products p WHERE p.id=invoice_items.product_id)
+                    WHERE brand_snapshot IS NULL''')
+
+
 MIGRATIONS = [(1, _m1_product_prices), (2, _m2_session_versions), (3, _m3_invoice_revisions), (4, _m4_indexes),
-              (5, _m5_roles_and_operations), (6, _m6_revoked_sessions), (7, _m7_return_credit)]
+              (5, _m5_roles_and_operations), (6, _m6_revoked_sessions), (7, _m7_return_credit), (8, _m8_brand_snapshot)]
 
 DEFAULT_SETTINGS = {
     'business_name': 'Shree Ganesh Fireworks', 'address': 'Pune, Maharashtra, India', 'license_number': '',

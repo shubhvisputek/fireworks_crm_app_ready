@@ -17,6 +17,6 @@ class InventoryRepository(Repository):
         return self.insert('stock_batches', values)
 
     def ledger(self, product_id, start, end):
-        return self.all('''SELECT m.*, p.name, p.sku FROM inventory_movements m JOIN products p ON p.id=m.product_id
+        return self.all('''SELECT m.*, p.name, p.sku, p.brand FROM inventory_movements m JOIN products p ON p.id=m.product_id
                            WHERE m.product_id=? AND date(m.created_at) BETWEEN ? AND ? ORDER BY m.created_at, m.id''',
                         (product_id, start, end))

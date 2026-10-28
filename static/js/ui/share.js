@@ -20,7 +20,7 @@ export function openWhatsapp(phone, message) {
 const shopName = () => state.limits?.business_name || 'our shop';
 
 export function billMessage(invoice, items = []) {
-  const lines = items.map((item) => `• ${item.product_name_snapshot} × ${item.qty_input} = ${money(item.unit_price * item.qty_input)}`);
+  const lines = items.map((item) => `• ${item.brand_snapshot ? `${item.product_name_snapshot} (${item.brand_snapshot})` : item.product_name_snapshot} × ${item.qty_input} = ${money(item.unit_price * item.qty_input)}`);
   return [`Thank you for shopping at ${shopName()}!`, `Bill ${invoice.invoice_number} (${invoice.invoice_date})`, ...lines,
     invoice.discount > 0 ? `Discount: ${money(invoice.discount)}` : '', `Total: ${money(invoice.grand_total)}`,
     invoice.outstanding > 0 ? `Balance due: ${money(invoice.outstanding)}` : ''].filter(Boolean).join('\n');

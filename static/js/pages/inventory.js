@@ -7,7 +7,7 @@ import { can, loadReferenceData, state } from '../core/state.js';
 import { registerPage } from '../core/router.js';
 import { closeModal, field, formModal, openModal, toast } from '../ui/feedback.js';
 import { withStorageConfirm } from '../ui/share.js';
-import { kpi, productOptions, table } from '../ui/widgets.js';
+import { brandTag, kpi, productOptions, table } from '../ui/widgets.js';
 import { showProductDetail } from './products.js';
 
 const ADJUSTMENT_TYPES = [['DAMAGE', 'Damage (reduce)'], ['BREAKAGE', 'Breakage (reduce)'], ['MOISTURE', 'Moisture (reduce)'],
@@ -36,7 +36,7 @@ async function render() {
     <div class="grid kpis">${kpi('Total Products', products.length)}${kpi('Low Stock', products.filter((p) => p.current_stock_base <= p.reorder_level).length)}
       ${kpi('Out of Stock', products.filter((p) => p.current_stock_base <= 0).length)}</div><br>
     <div class="card"><h3>Current Stock</h3>${table(['Product ID', 'Product', 'Unit', 'Available', 'Minimum', 'Default Price', ''], products.map((p) => html`<tr>
-      <td>${p.sku}</td><td>${p.name}</td><td>${p.unit}</td><td><span class="tag ${status(p)}">${num(p.current_stock_base)}</span></td>
+      <td>${p.sku}</td><td>${p.name}${brandTag(p.brand)}</td><td>${p.unit}</td><td><span class="tag ${status(p)}">${num(p.current_stock_base)}</span></td>
       <td>${num(p.reorder_level)}</td><td>${money(p.default_unit_price)}</td>
       <td>${can('catalog.manage') ? html`<button class="button" data-action="inventory.view" data-id="${p.id}">View</button>` : ''}</td></tr>`), 'No products yet.')}</div>`);
 }
@@ -115,7 +115,7 @@ async function showReorderPlan(filters) {
       <button class="button">Recalculate</button></form><br>
     ${withCost ? html`<div class="notice">Estimated purchase cost: <strong>${money(plan.total_cost)}</strong></div><br>` : ''}
     ${table(['Product', 'Sold last season', 'In stock', 'Target', 'Suggested order', ...(withCost ? ['Est. cost'] : [])], rows.map((row) => html`<tr>
-      <td>${row.sku} • ${row.name}</td><td>${num(row.sold_last_season)}</td><td>${num(row.stock)}</td><td>${num(row.target)}</td>
+      <td>${row.sku} • ${row.name}${brandTag(row.brand)}</td><td>${num(row.sold_last_season)}</td><td>${num(row.stock)}</td><td>${num(row.target)}</td>
       <td><strong>${num(row.suggested)} ${row.unit}</strong></td>${withCost ? html`<td>${money(row.cost)}</td>` : ''}</tr>`), 'No sales in that season to plan from.')}`);
 }
 

@@ -11,7 +11,7 @@ class ReportRepository(Repository):
                             FROM invoices i WHERE {FINALIZED_IN_RANGE} GROUP BY hr ORDER BY hr''', (start, end))
 
     def top_products(self, start, end, limit=20):
-        return self.all(f'''SELECT ii.product_name_snapshot AS name, ii.sku_snapshot AS sku, ROUND(SUM(ii.qty_input), 2) AS qty,
+        return self.all(f'''SELECT ii.product_name_snapshot AS name, ii.sku_snapshot AS sku, MAX(ii.brand_snapshot) AS brand, ROUND(SUM(ii.qty_input), 2) AS qty,
                                    ROUND(SUM(ii.taxable_amount), 2) AS revenue,
                                    ROUND(SUM(ii.taxable_amount - ii.cost_snapshot * ii.qty_input), 2) AS profit
                             FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id WHERE {FINALIZED_IN_RANGE}
@@ -33,7 +33,7 @@ class ReportRepository(Repository):
                             FROM invoices i WHERE {FINALIZED_IN_RANGE} GROUP BY i.customer_type_snapshot''', (start, end))
 
     def slow_movers(self, start, end, limit=20):
-        return self.all(f'''SELECT p.name, p.sku, ROUND({STOCK_SQL}, 2) AS stock,
+        return self.all(f'''SELECT p.name, p.sku, p.brand, ROUND({STOCK_SQL}, 2) AS stock,
                                    (SELECT MAX(i.invoice_date) FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id
                                     WHERE ii.product_id=p.id AND i.status='FINALIZED') AS last_sale,
                                    (SELECT COALESCE(SUM(ii.qty_input), 0) FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id
@@ -46,7 +46,7 @@ class ReportRepository(Repository):
                             FROM invoices i WHERE {FINALIZED_IN_RANGE}''', (start, end))
 
     def low_stock(self, limit=10):
-        rows = self.all(f'''SELECT p.name, p.sku, ROUND({STOCK_SQL}, 2) AS stock, ROUND(p.reorder_level, 2) AS reorder_level
+        rows = self.all(f'''SELECT p.name, p.sku, p.brand, ROUND({STOCK_SQL}, 2) AS stock, ROUND(p.reorder_level, 2) AS reorder_level
                             FROM products p WHERE p.status='ACTIVE' AND {STOCK_SQL} <= p.reorder_level
                             ORDER BY stock ASC, p.name''')
         return len(rows), rows[:limit]

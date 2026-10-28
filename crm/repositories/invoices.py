@@ -63,7 +63,7 @@ class InvoiceRepository(Repository):
         return self.one('SELECT * FROM invoice_items WHERE id=? AND invoice_id=?', (item_id, invoice_id))
 
     def items_for_export(self):
-        return self.all('''SELECT i.invoice_number, i.invoice_date, i.customer_name_snapshot, ii.sku_snapshot, ii.product_name_snapshot,
+        return self.all('''SELECT i.invoice_number, i.invoice_date, i.customer_name_snapshot, ii.sku_snapshot, ii.product_name_snapshot, ii.brand_snapshot,
                                   ii.qty_input, ii.sell_unit, ii.qty_base, ii.unit_price, ii.discount, ii.taxable_amount, ii.cost_snapshot
                            FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id
                            WHERE i.status='FINALIZED' ORDER BY i.invoice_date, i.id, ii.id''')

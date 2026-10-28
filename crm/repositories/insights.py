@@ -108,16 +108,16 @@ class InsightRepository(Repository):
     def products(self, start, end, user_id=None):
         where, params = _scope(start, end, user_id)
         rows = self.all(f'''SELECT ii.product_id, ii.product_name_snapshot AS name, ii.sku_snapshot AS sku,
-                                   {CATEGORY_SQL} AS category,
+                                   MAX(ii.brand_snapshot) AS brand, {CATEGORY_SQL} AS category,
                                    ROUND(SUM(ii.qty_input), 2) AS qty, ROUND(SUM(ii.taxable_amount), 2) AS revenue,
                                    ROUND(SUM(ii.taxable_amount - ii.cost_snapshot * ii.qty_input), 2) AS profit,
                                    COUNT(DISTINCT i.id) AS bills
                             FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id LEFT JOIN products p ON p.id=ii.product_id
                             WHERE {where} GROUP BY ii.product_id ORDER BY revenue DESC''', params)
         returned = self.returned(start, end, user_id, 'ii.product_id',
-                                 f'MAX(ii.product_name_snapshot) AS name, MAX(ii.sku_snapshot) AS sku, MAX({CATEGORY_SQL}) AS category,')
+                                 f'MAX(ii.product_name_snapshot) AS name, MAX(ii.sku_snapshot) AS sku, MAX(ii.brand_snapshot) AS brand, MAX({CATEGORY_SQL}) AS category,')
         rows = self._net(rows, returned, 'product_id', lambda r: {'qty': r['qty'], 'revenue': r['amount'], 'profit': r['amount'] - r['cogs']},
-                         lambda r: {'name': r['name'], 'sku': r['sku'], 'category': r['category'], 'qty': 0, 'revenue': 0, 'profit': 0, 'bills': 0})
+                         lambda r: {'name': r['name'], 'sku': r['sku'], 'brand': r['brand'], 'category': r['category'], 'qty': 0, 'revenue': 0, 'profit': 0, 'bills': 0})
         return sorted(rows, key=lambda row: row['revenue'], reverse=True)
 
     def categories(self, start, end, user_id=None):
@@ -201,7 +201,7 @@ class InsightRepository(Repository):
     def dead_stock(self, since, limit=10):
         """Products with stock on hand and no finalized sale since the given date."""
         return self.all(f'''SELECT * FROM (
-                                SELECT p.name, p.sku, ROUND({STOCK_SQL}, 2) AS stock, ROUND({STOCK_SQL} * p.cost_price, 2) AS inventory_cost,
+                                SELECT p.name, p.sku, p.brand, ROUND({STOCK_SQL}, 2) AS stock, ROUND({STOCK_SQL} * p.cost_price, 2) AS inventory_cost,
                                        ROUND({STOCK_SQL} * p.default_unit_price, 2) AS retail_value,
                                        (SELECT MAX(i.invoice_date) FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id
                                         WHERE ii.product_id=p.id AND i.status='FINALIZED') AS last_sale
@@ -210,7 +210,7 @@ class InsightRepository(Repository):
                             ORDER BY retail_value DESC LIMIT ?''', (since, limit))
 
     def stock_levels(self):
-        return self.all(f'''SELECT p.id AS product_id, p.name, p.sku, ROUND({STOCK_SQL}, 2) AS stock, p.reorder_level
+        return self.all(f'''SELECT p.id AS product_id, p.name, p.sku, p.brand, ROUND({STOCK_SQL}, 2) AS stock, p.reorder_level
                             FROM products p WHERE p.status='ACTIVE' ''')
 
     # ---- money out ---------------------------------------------------------

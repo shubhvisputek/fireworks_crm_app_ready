@@ -323,6 +323,27 @@ class ImportTests(ApiTestCase):
         self.assertEqual(res.status, 400)
 
 
+class BrandTests(ApiTestCase):
+    """Same-named products from different companies must stay apart on bills, in search and in reports."""
+
+    def test_brand_in_search_bill_and_exports(self):
+        a = self.make_product(price=100, name='Rocket Pack', brand='Standard Fireworks')
+        b = self.make_product(price=150, name='Rocket Pack', brand='Cock Brand')
+        found = {r['id'] for r in self.admin.get('/api/products?q=Cock').json()}
+        self.assertIn(b, found)
+        self.assertNotIn(a, found)
+        res = self.sell(self.admin, [{'product_id': a, 'qty': 1}, {'product_id': b, 'qty': 2}], [{'mode': 'Cash', 'amount': 400}])
+        self.assertEqual(res.status, 200, res.body)
+        items = self.admin.get(f"/api/invoices/{res.json()['invoice_id']}").json()['items']
+        self.assertEqual([(i['product_name_snapshot'], i['brand_snapshot']) for i in items],
+                         [('Rocket Pack', 'Standard Fireworks'), ('Rocket Pack', 'Cock Brand')])
+        top = self.admin.get('/api/analytics?preset=today').json()['top_products']
+        self.assertIn(('Rocket Pack', 'Cock Brand'), {(t['name'], t.get('brand')) for t in top})
+        for path in ('/api/export/sales-detailed.xlsx', '/api/export/sales.pdf', f"/api/invoice-pdf/{res.json()['invoice_id']}", f"/api/invoice-receipt/{res.json()['invoice_id']}"):
+            with self.subTest(path=path):
+                self.assertEqual(self.admin.get(path).status, 200)
+
+
 class SalesTests(ApiTestCase):
     def test_sale_flow_and_invoice_detail(self):
         pid = self.make_product(price=100, stock=10)

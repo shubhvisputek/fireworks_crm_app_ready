@@ -74,3 +74,43 @@ body{font-size:16px}.small{font-size:14px}.kpi .label{font-size:14px}.kpi .sub{f
 @media(max-width:359px){.grid.kpis{grid-template-columns:1fr}.topbar h1{font-size:16px}}
 @media(min-width:1600px){.content{max-width:1600px}}
 .dashboard,.dash-body{grid-template-columns:minmax(0,1fr)}
+
+/* Phones: product cards show the name and company with View on the first line, then the details in two short rows. */
+@media(max-width:640px){
+  #productTable .table tr{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px 10px;padding:10px 12px;align-items:start}
+  #productTable .table td{padding:0;border:0;text-align:left;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #productTable .table td::before{float:none;display:block;margin:0 0 1px;font-size:11px;max-width:none}
+  #productTable .table td::after{content:none}
+  #productTable .table td:nth-child(2){grid-column:1/3;order:-2;white-space:normal;font-size:15px;line-height:1.3;align-self:center}
+  #productTable .table td:nth-child(2)::before{content:none}
+  #productTable .table td:nth-child(2) div{display:block;margin:1px 0 0;font-size:13px}
+  #productTable .table td:nth-child(5)::before{content:'Unit Price'}
+  #productTable .table td:last-child{grid-column:3;order:-1;justify-self:end;align-self:center}
+  #productTable .table td:last-child .button{padding:6px 12px;min-height:36px}
+  #productTable .table td:first-child div{display:inline;margin-left:6px}
+}
+
+.cart-phone-only{display:none}
+/* Bill lines. Desktop/tablet: one row per line with the meta text under the name. The quantity stepper is compact
+   (small − and + around a number box that grows with the digits). Phones: a three-line card. */
+.cart-header,.cart-row{grid-template-columns:minmax(180px,1fr) 118px 72px 96px 100px 34px;gap:8px;align-items:center}
+.cart-row{grid-template-areas:"product quantity unit price total remove" "meta quantity unit price total remove";row-gap:0}
+.cart-product{grid-area:product;min-width:0;overflow-wrap:anywhere;line-height:1.3}.cart-meta{grid-area:meta;line-height:1.3;margin-top:1px}
+.cart-quantity{grid-area:quantity}.cart-unit{grid-area:unit}.cart-price{grid-area:price}.cart-line-total{grid-area:total}.cart-remove{grid-area:remove}
+.qty-stepper{display:inline-grid;grid-template-columns:32px auto 32px;align-items:stretch;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface-solid,#fff);width:max-content}
+.qty-stepper .input{border:0;border-radius:0;text-align:center;padding:0 4px;min-height:32px;height:32px;width:auto;min-width:36px;max-width:72px;field-sizing:content;font-size:14px;font-weight:600;-moz-appearance:textfield;appearance:textfield}
+.qty-stepper .input::-webkit-outer-spin-button,.qty-stepper .input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.qty-stepper .input:focus{outline:none;box-shadow:inset 0 0 0 2px var(--accent)}
+.qty-step{border:0;background:var(--accent-soft,#eef2ff);color:var(--accent-ink,#3730a3);font-size:18px;font-weight:700;line-height:1;min-height:32px;padding:0;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.qty-step:hover{filter:brightness(1.08)}.qty-step:active{transform:scale(.94)}
+.cart-remove{min-width:32px;min-height:32px;padding:0;font-size:18px;line-height:1}
+@media(max-width:560px){
+  .cart-header{display:none}.cart-grid{min-width:0;width:100%}#cart{overflow:visible}
+  .cart-row{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"product total" "meta meta" "quantity remove";gap:2px 8px;padding:8px 10px;margin:0 0 6px;border:1px solid var(--line);border-radius:10px;align-items:center}
+  .cart-product strong{font-size:14px}.cart-product .tag{font-size:9px;padding:1px 6px}
+  .cart-meta{font-size:11.5px;white-space:normal}
+  .cart-unit,.cart-price,.cart-field-label{display:none}.cart-phone-only{display:inline}
+  .cart-line-total{align-self:start;justify-content:flex-end}.cart-line-total strong{font-size:15px}
+  .cart-quantity{margin-top:4px;justify-self:start}.cart-remove{justify-self:end;min-width:36px;min-height:36px;color:var(--muted)}
+  .qty-stepper{grid-template-columns:36px auto 36px}.qty-stepper .input,.qty-step{min-height:36px;height:36px}.qty-stepper .input{font-size:15px}
+}
