@@ -138,7 +138,9 @@ class InsightService(Service):
             row['share'] = _pct(row['revenue'], total)
             row['gross_margin'] = _pct(row['profit'], row['revenue'])
         return {
-            'top': rows[:10], 'bottom': rows[::-1][:10] if len(rows) > 10 else [],
+            'top': rows[:10],
+            # Slow movers rank the whole catalogue, so a product that sold nothing in the period tops the list.
+            'slow_movers': r.slow_movers(ctx['start'], ctx['end'], ctx['user_id']),
             'rising': [row for row in movers[::-1] if row['change'] > 0][:5],
             'falling': [row for row in movers if row['change'] < 0][:5],
             'categories': categories, 'sold_count': len(rows),

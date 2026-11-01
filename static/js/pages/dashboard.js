@@ -188,7 +188,9 @@ function products(d) {
     </div>
     <div class="grid two">
       ${card('Top sellers', table(headers, productRows(pr.top), 'No sales in this period.'))}
-      ${card('Slowest sellers', table(headers, productRows(pr.bottom), 'Fewer than 10 products sold in this period.'), 'Sold at least once, lowest revenue first')}
+      ${card('Slowest sellers', table(['Product', 'Sold', 'Stock', 'Last sold'], pr.slow_movers.map((x) => html`<tr><td>${x.name}${brandTag(x.brand)}<div class="small muted">${x.sku}</div></td>
+        <td>${x.qty > 0 ? num(x.qty) : html`<span class="tag warn">None</span>`}</td><td>${num(x.stock)}</td><td>${x.last_sale ? shortDate(x.last_sale) : 'Never'}</td></tr>`),
+        'No active products.'), 'Every active product, fewest sold in this period first')}
     </div>`;
 }
 

@@ -120,6 +120,21 @@ class InsightRepository(Repository):
                          lambda r: {'name': r['name'], 'sku': r['sku'], 'brand': r['brand'], 'category': r['category'], 'qty': 0, 'revenue': 0, 'profit': 0, 'bills': 0})
         return sorted(rows, key=lambda row: row['revenue'], reverse=True)
 
+    def slow_movers(self, start, end, user_id=None, limit=10):
+        """Every active product ranked by how little it sold in the period: unsold products come first, and among those
+        with the same quantity, the one with the most stock on hand first (it has the most money tied up)."""
+        where, params = _scope(start, end, user_id)
+        return self.all(f'''SELECT * FROM (
+                                SELECT p.id AS product_id, p.name, p.sku, p.brand, {CATEGORY_SQL} AS category, ROUND({STOCK_SQL}, 2) AS stock,
+                                       (SELECT COALESCE(SUM(ii.qty_input), 0) FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id
+                                        WHERE ii.product_id=p.id AND {where}) AS qty,
+                                       (SELECT ROUND(COALESCE(SUM(ii.taxable_amount), 0), 2) FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id
+                                        WHERE ii.product_id=p.id AND {where}) AS revenue,
+                                       (SELECT MAX(i.invoice_date) FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id
+                                        WHERE ii.product_id=p.id AND i.status='FINALIZED') AS last_sale
+                                FROM products p WHERE p.status='ACTIVE')
+                            ORDER BY qty ASC, stock DESC, name LIMIT ?''', [*params, *params, limit])
+
     def categories(self, start, end, user_id=None):
         where, params = _scope(start, end, user_id)
         rows = self.all(f'''SELECT {CATEGORY_SQL} AS category, ROUND(SUM(ii.taxable_amount), 2) AS revenue,

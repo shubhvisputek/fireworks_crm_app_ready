@@ -92,7 +92,7 @@ Still works the old way: `pip install -r requirements.txt` then `python server.p
 - **Dashboard with analytics:** pick a period (today, yesterday, last 7/30 days, this/last month, season or any dates); every number is compared with the period before it. Tabs show each point of view, and only the tabs a person's permissions allow:
   - **Overview:** headline numbers with change and trend, sales by day vs the previous period, target progress, payment mix, top products, what needs attention.
   - **Sales:** discounts, credit given, deleted/edited/returned bills, sales by hour, a weekday × hour heatmap of busy times, bill sizes, payment modes.
-  - **Products:** revenue and margin by category, top 10 and most profitable products, rising and falling products, slowest sellers, how concentrated sales are.
+  - **Products:** revenue and margin by category, top 10 and most profitable products, rising and falling products, slowest sellers (every active product ranked by fewest sold, so unsold stock shows first), how concentrated sales are.
   - **Customers & credit:** retail vs wholesale, new vs repeat customers, top customers, credit outstanding by age.
   - **Team:** sales, bills, average bill, discounts, deletions, edits and refunds per person.
   - **Stock:** stock value by category, out of stock and low stock, products running out at the current pace, stock that is not selling, licence storage.

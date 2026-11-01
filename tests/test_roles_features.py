@@ -495,6 +495,9 @@ class InsightTests(RoleTestCase):
         res = owner_client.post('/api/products', {'sku': 'INS-1', 'name': 'Insight Rocket', 'category': 'Rockets', 'unit_price': 100,
                                                   'opening_stock': 100, 'cost_price': 60})
         cls.pid = res.json()['id']
+        # Never sold, with a lot of stock: must top the slow-movers list.
+        cls.dud = owner_client.post('/api/products', {'sku': 'INS-DUD', 'name': 'Insight Dud', 'category': 'Rockets', 'unit_price': 50,
+                                                      'opening_stock': 1000, 'cost_price': 30}).json()['id']
         for client, qty in ((cls.clients['CASHIER'], 2), (cls.clients['CASHIER'], 1), (cls.cashier2, 4), (cls.owner, 3)):
             sale = client.post('/api/sales', {'items': [{'product_id': cls.pid, 'qty': qty}], 'payments': [{'mode': 'UPI', 'amount': 100 * qty}]})
             assert sale.status == 200, sale.body
@@ -521,6 +524,18 @@ class InsightTests(RoleTestCase):
         self.assertEqual([t['key'] for t in d['finance']['targets']], ['daily', 'weekly', 'monthly', 'seasonal'])
         self.assertIn('dues_aging', d['customers'])
         self.assertIn('inventory_cost', d['stock']['totals'])
+
+    def test_slow_movers_include_unsold_products(self):
+        slow = self.owner.get('/api/insights?preset=today').json()['products']['slow_movers']
+        self.assertEqual(slow[0]['sku'], 'INS-DUD')
+        self.assertEqual((slow[0]['qty'], slow[0]['stock'], slow[0]['last_sale']), (0, 1000, None))
+        sold = [row['qty'] for row in slow]
+        self.assertEqual(sold, sorted(sold))  # fewest sold first
+        self.assertEqual({row['qty'] for row in slow if row['sku'] == 'INS-1'} - {10}, set())
+        # A cashier's view counts only their own bills, and the unsold product still tops the list.
+        own = self.cashier.get('/api/insights?preset=today').json()['products']['slow_movers']
+        self.assertEqual(own[0]['sku'], 'INS-DUD')
+        self.assertEqual({row['qty'] for row in own if row['sku'] == 'INS-1'} - {3}, set())
 
     def test_trend_is_filled_and_compared(self):
         d = self.owner.get('/api/insights?preset=7d').json()
