@@ -359,6 +359,47 @@ class HeldBillAndReturnTests(RoleTestCase):
         self.assertEqual([(p['qty'], p['revenue']) for p in own['products']['top']], [(2, 200)])  # cashiers don't see profit
         self.assertEqual(sum(day['sales'] for day in own['sales']['trend']), 200)
 
+
+class FindingBillsAndCustomersTests(RoleTestCase):
+    def test_credit_bills_can_be_listed_and_searched(self):
+        pid = self.product(price=100)
+        credit = self.sell(self.cashier, pid, payments=[{'mode': 'Credit', 'amount': 100}], customer_name='Lata Credit',
+                           customer_phone='9812300001').json()
+        self.sell(self.cashier, pid)
+        listed = lambda client, **q: client.get('/api/invoices?start=1900-01-01&end=2999-12-31&' +
+                                                '&'.join(f'{k}={v}' for k, v in q.items())).json()
+        due = listed(self.owner, credit='1')
+        self.assertIn(credit['invoice_id'], [b['id'] for b in due])
+        self.assertTrue(all(b['outstanding'] > 0 for b in due), 'credit filter shows only bills with money due')
+        for term in (credit['invoice_number'], 'Lata', '98123'):
+            with self.subTest(term=term):
+                self.assertEqual([b['id'] for b in listed(self.owner, q=term)], [credit['invoice_id']])
+        self.assertEqual(listed(self.cashier2, q='Lata'), [], "a cashier's search still covers only their own bills")
+        self.assertEqual(listed(self.owner, q='no-such-bill'), [])
+
+    def test_customer_list_is_complete_with_totals(self):
+        for n in range(105):
+            self.owner.post('/api/customers', {'name': f'Zz Bulk {n:03d}'})
+        pid = self.product(price=100)
+        self.sell(self.cashier, pid, qty=2, payments=[{'mode': 'Cash', 'amount': 50}, {'mode': 'Credit', 'amount': 150}],
+                  customer_name='Zz Bulk 104')
+        everyone = self.owner.get('/api/customers/all').json()
+        names = [c['name'] for c in everyone]
+        self.assertGreaterEqual(len(names), 105, 'not cut off at 100')
+        self.assertIn('Zz Bulk 104', names)
+        last = next(c for c in everyone if c['name'] == 'Zz Bulk 104')
+        self.assertEqual((last['bills'], last['total_bought'], last['outstanding']), (1, 200, 150))
+        self.assertEqual(self.manager.get('/api/customers/all').status, 200)
+
+    def test_dues_say_which_bills_can_be_edited(self):
+        pid = self.product(price=100)
+        sale = self.sell(self.cashier, pid, qty=2, payments=[{'mode': 'Credit', 'amount': 200}], customer_name='Edit Me').json()
+        bill = lambda: next(b for c in self.owner.get('/api/dues').json()['customers'] for b in c['bills'] if b['id'] == sale['invoice_id'])
+        self.assertEqual(bill()['returned_amount'], 0)
+        item = self.manager.get(f"/api/invoices/{sale['invoice_id']}").json()['items'][0]
+        self.manager.post('/api/returns', {'invoice_id': sale['invoice_id'], 'items': [{'invoice_item_id': item['id'], 'qty': 1}]})
+        self.assertEqual(bill()['returned_amount'], 100, 'a bill with a return is marked, so Edit is not offered')
+
 class AuditAndDuesTests(RoleTestCase):
     def test_audit_log(self):
         pid = self.product()

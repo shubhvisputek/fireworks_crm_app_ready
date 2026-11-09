@@ -10,7 +10,9 @@ import { brandTag, table } from '../ui/widgets.js';
 import { loadInvoiceForEdit } from '../billing/bill.js';
 import { WHATSAPP_ENABLED, billMessage, openWhatsapp } from '../ui/share.js';
 
-let view = 'FINALIZED';
+let view = 'FINALIZED'; // FINALIZED (active), CREDIT (active with money due) or VOID (cancelled / edited)
+let query = '';
+const LIST_LIMIT = 500; // the server sends at most this many, newest first
 
 function history(x) {
   const lines = [];
@@ -45,25 +47,40 @@ function actions(x) {
 }
 
 async function render() {
-  const invoices = await api.get('/api/invoices', { start: '1900-01-01', end: todayISO(), status: view });
+  const invoices = await api.get('/api/invoices', { start: '1900-01-01', end: todayISO(), status: view === 'VOID' ? 'VOID' : 'FINALIZED',
+    credit: view === 'CREDIT' ? '1' : '', q: query });
   const rows = invoices.map((x) => html`<tr>
     <td><strong>${x.invoice_number}</strong>${history(x)}</td><td>${x.invoice_date}</td><td>${x.customer_name_snapshot}</td>
     <td>${x.billed_by_name || '-'}<div class="small muted">${dateTime(x.created_at)}</div></td>
     <td>${money(x.grand_total)}${x.returned_amount > 0 ? html`<div class="small"><span class="tag warn">Returned ${money(x.returned_amount)}</span></div>` : ''}</td>
     <td>${money(x.amount_received)}${x.outstanding > 0 ? html`<div class="small muted">Due ${money(x.outstanding)}</div>` : ''}</td>
     <td><div class="row">${actions(x)}</div></td></tr>`);
-  setHtml($('#page'), html`<div class="card"><div class="between"><div><h3>Invoices</h3>
+  const option = (value, label) => html`<option value="${value}" ${view === value ? html`selected` : ''}>${label}</option>`;
+  const empty = query ? `No bills match "${query}".` : view === 'CREDIT' ? 'No bills with credit due. 🎉' : 'No bills.';
+  setHtml($('#page'), html`<div class="card"><div class="between wrap"><div><h3>Invoices</h3>
       <div class="small muted">${can('sales.view') ? 'All bills.' : 'Bills you made.'} Edit re-issues a bill with a new number and keeps the original as cancelled.</div></div>
-      <select class="select" aria-label="Which bills" data-change="sales.view">
-        <option value="FINALIZED" ${view === 'FINALIZED' ? html`selected` : ''}>Active bills</option>
-        <option value="VOID" ${view === 'VOID' ? html`selected` : ''}>Cancelled / edited bills</option></select></div><br>
-    ${table(['Invoice', 'Date', 'Customer', 'Billed by', 'Total', 'Received', 'Actions'], rows, 'No bills.')}</div>`);
+      <select class="select" aria-label="Which bills" data-change="sales.view" style="max-width:260px">
+        ${option('FINALIZED', 'Active bills')}${option('CREDIT', 'Credit due (unpaid)')}${option('VOID', 'Cancelled / edited bills')}</select></div>
+    <form class="row wrap sales-search" data-submit="sales.search" style="margin:12px 0">
+      <input class="input" type="search" name="q" value="${query}" placeholder="Bill number, customer name or mobile" aria-label="Search all bills" style="flex:1;min-width:200px">
+      <button class="button primary">Search</button>${query ? html`<button type="button" class="button" data-action="sales.clearSearch">Clear</button>` : ''}</form>
+    ${invoices.length >= LIST_LIMIT ? html`<p class="notice small">Showing the newest ${LIST_LIMIT} bills. Search above to find an older one.</p>` : ''}
+    ${table(['Invoice', 'Date', 'Customer', 'Billed by', 'Total', 'Received', 'Actions'], rows, empty, { search: false })}</div>`);
 }
 
 registerActions({
   'sales.view': (el) => {
     view = el.value;
     render();
+  },
+  // Searches every bill on the server (not just the ones on screen), by bill number, customer name or mobile.
+  'sales.search': (form) => {
+    query = form.elements.q.value.trim();
+    return render();
+  },
+  'sales.clearSearch': () => {
+    query = '';
+    return render();
   },
   'sales.pdf': (el) => window.open(`/api/invoice-pdf/${el.dataset.id}`, '_blank'),
   'sales.receipt': (el) => window.open(`/api/invoice-receipt/${el.dataset.id}`, '_blank'),
@@ -73,7 +90,10 @@ registerActions({
   },
   'sales.edit': async (el) => {
     const detail = await api.get(`/api/invoices/${el.dataset.id}`);
-    const missing = detail.items.filter((item) => !findProduct(item.product_id));
+    const unknown = () => detail.items.filter((item) => !findProduct(item.product_id));
+    // A product added since sign-in (e.g. on another device) is not in the list yet: refresh once before refusing.
+    if (unknown().length) await loadReferenceData();
+    const missing = unknown();
     if (missing.length) return toast(`Cannot edit: these products are no longer active: ${missing.map((m) => m.product_name_snapshot).join(', ')}`, 'error');
     loadInvoiceForEdit(detail, state.settings?.walk_in_name || 'Walk-in Customer');
     go('billing');

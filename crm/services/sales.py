@@ -14,12 +14,16 @@ INVOICE_STATUSES = ('FINALIZED', 'VOID')
 
 class SalesService(Service):
     # --- queries ------------------------------------------------------------
-    def list_invoices(self, actor, start=None, end=None, status='FINALIZED'):
+    LIST_LIMIT = 500
+
+    def list_invoices(self, actor, start=None, end=None, status='FINALIZED', query='', credit_only=False):
+        """Bills this user may see, newest first, at most LIST_LIMIT (search or filter to reach older ones)."""
         start = v.iso_date(start, 'Start date') or self.today()
         end = v.iso_date(end, 'End date') or self.today()
         status = v.one_of(status, INVOICE_STATUSES, 'Status', default='FINALIZED')
         own_only = None if self.can(actor, P.SALES_VIEW) else actor['id']
-        return self.repos.invoices.list(start, end, status, user_id=own_only)
+        return self.repos.invoices.list(start, end, status, limit=self.LIST_LIMIT, user_id=own_only,
+                                        query=v.text(query, 100), credit_only=v.parse_bool(credit_only))
 
     def visible_invoice(self, actor, invoice_id):
         """The invoice if this user may see it: everyone's with 'See all bills', otherwise only bills they made."""

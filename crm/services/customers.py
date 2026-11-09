@@ -7,6 +7,10 @@ class CustomerService(Service):
     def search(self, query=''):
         return self.repos.customers.search(v.text(query, 100))
 
+    def list_all(self, actor):
+        """The full customer list for the Customers page (search() stops at 100, for look-ups)."""
+        return self.visible(actor, self.repos.customers.list_with_totals())
+
     def _next_code(self):
         # Older databases used random codes, so skip any number already taken.
         while True:

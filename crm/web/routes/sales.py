@@ -9,7 +9,8 @@ def create_sale(ctx):
 
 def list_invoices(ctx):
     q = ctx.request.query
-    return ctx.services.sales.list_invoices(ctx.user, q.get('start'), q.get('end'), q.get('status', 'FINALIZED'))
+    return ctx.services.sales.list_invoices(ctx.user, q.get('start'), q.get('end'), q.get('status', 'FINALIZED'),
+                                            q.get('q', ''), q.get('credit', ''))
 
 
 def invoice_detail(ctx):

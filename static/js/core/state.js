@@ -4,7 +4,6 @@ import { api } from './api.js';
 export const state = {
   user: null,
   products: [],
-  customers: [],
   settings: null,
   targets: null,
   limits: { max_discount_pct: 100, receipt_format: 'A4' }, // shop rules every user needs (from /api/me)
@@ -39,7 +38,6 @@ export function findProduct(id) {
 // Reference data the pages need, limited to what this user may read.
 export async function loadReferenceData() {
   const tasks = [api.get('/api/products', { limit: 500 }).then((rows) => (state.products = rows))];
-  if (can(['customers.view', 'customers.manage'])) tasks.push(api.get('/api/customers').then((rows) => (state.customers = rows)));
   if (can('settings.manage')) {
     tasks.push(api.get('/api/settings').then((data) => {
       state.settings = data.settings;

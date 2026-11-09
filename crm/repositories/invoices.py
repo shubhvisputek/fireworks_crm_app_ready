@@ -19,10 +19,18 @@ LEFT JOIN customers c ON c.id=i.customer_id
 
 class InvoiceRepository(Repository):
     # --- invoices ---------------------------------------------------------
-    def list(self, start, end, status='FINALIZED', limit=500, user_id=None):
-        own = ' AND i.user_id=?' if user_id else ''
-        params = (start, end, status) + ((user_id,) if user_id else ()) + (limit,)
-        return self.all(INVOICE_SELECT + f' WHERE i.invoice_date BETWEEN ? AND ? AND i.status=?{own} ORDER BY i.id DESC LIMIT ?', params)
+    def list(self, start, end, status='FINALIZED', limit=500, user_id=None, query='', credit_only=False):
+        """Newest first. query matches the bill number, customer name or phone; credit_only keeps bills with money still due."""
+        where, params = ['i.invoice_date BETWEEN ? AND ?', 'i.status=?'], [start, end, status]
+        if user_id:
+            where.append('i.user_id=?')
+            params.append(user_id)
+        if query:
+            where.append('(i.invoice_number LIKE ? OR i.customer_name_snapshot LIKE ? OR c.phone LIKE ?)')
+            params += [f'%{query}%'] * 3
+        if credit_only:
+            where.append('i.outstanding > 0.009')
+        return self.all(INVOICE_SELECT + f" WHERE {' AND '.join(where)} ORDER BY i.id DESC LIMIT ?", params + [limit])
 
     def list_finalized(self):
         return self.all(INVOICE_SELECT + " WHERE i.status='FINALIZED' ORDER BY i.invoice_date, i.id")
