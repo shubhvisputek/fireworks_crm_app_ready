@@ -24,7 +24,9 @@ async function render() {
     <div class="card"><h3>Unpaid bills</h3>${table(['Bill', 'Date', 'Customer', 'Total', 'Paid', 'Due', ''], bills.map((b) => html`<tr>
       <td>${b.invoice_number}</td><td>${b.invoice_date}</td><td>${b.customer_name_snapshot}</td><td>${money(b.grand_total)}</td>
       <td>${money(b.amount_received)}</td><td><strong>${money(b.outstanding)}</strong></td>
-      <td>${can('payments.collect') ? html`<button class="button primary" data-action="dues.collect" data-id="${b.id}" data-due="${b.outstanding}" data-number="${b.invoice_number}">Collect</button>` : ''}</td></tr>`))}</div>`);
+      <td><div class="row">${can('payments.collect') ? html`<button class="button primary" data-action="dues.collect" data-id="${b.id}" data-due="${b.outstanding}" data-number="${b.invoice_number}">Collect</button>` : ''}
+        ${can('sales.edit') && !(b.returned_amount > 0) ? html`<button class="button" data-action="sales.edit" data-id="${b.id}">Edit</button>` : ''}
+        ${can('invoices.print') ? html`<button class="button" data-action="sales.pdf" data-id="${b.id}">PDF</button>` : ''}</div></td></tr>`))}</div>`);
 }
 
 registerActions({

@@ -57,7 +57,9 @@ class ReportRepository(Repository):
     def dues(self):
         """Finalized bills with credit still outstanding, oldest first."""
         return self.all('''SELECT i.id, i.invoice_number, i.invoice_date, i.customer_id, i.customer_name_snapshot, c.phone AS customer_phone,
-                                  i.grand_total, i.amount_received, i.outstanding
+                                  i.grand_total, i.amount_received, i.outstanding,
+                                  (SELECT COALESCE(SUM(r.total_refund), 0) FROM returns r
+                                   WHERE r.invoice_id=i.id AND r.status='POSTED') AS returned_amount
                            FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id
                            WHERE i.status='FINALIZED' AND i.outstanding > 0.009 ORDER BY i.invoice_date, i.id''')
 
