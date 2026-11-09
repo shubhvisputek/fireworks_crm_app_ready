@@ -440,9 +440,9 @@ class ListExportTests(RoleTestCase):
     def test_only_people_with_the_permission_can_export(self):
         for role, client in self.clients.items():
             with self.subTest(role=role):
-                expected = 200 if role in ('OWNER', 'MANAGER', 'ACCOUNTANT') else 403
+                expected = 200 if role == 'OWNER' else 403  # only the owner by default; given to others per person
                 self.assertEqual(self.post_export(client).status, expected)
-        # The owner can give it to one person.
+        # The owner can give it to one person, of any role.
         extra = self.user('exportcashier', 'CASHIER')
         preset = set(extra.get('/api/me').json()['user']['permissions'])
         self.assertEqual(self.post_export(extra).status, 403)
