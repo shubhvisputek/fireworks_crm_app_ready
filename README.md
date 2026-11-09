@@ -105,6 +105,11 @@ Still works the old way: `pip install -r requirements.txt` then `python server.p
   - Changing someone's role or permissions signs them out so the new access applies immediately.
 - **Discount approval:** discounts above the limit in Settings (default 10%) need a manager's username and password at the counter. The approver is recorded on the bill.
 - **Discounts are not advertised:**
+- **Search and Export on every list:**
+  - Every list has a search box: customers, suppliers, stock, products, expenses, dues, cash closings, users, the audit log and backups.
+  - People with the **Export lists to Excel** permission also get an **Export** button. It downloads the list as an Excel file, exactly as filtered by the search, without the buttons column. Amounts stay numbers; mobiles and barcodes stay text.
+  - The permission is on for Owner, Manager and Accountant, and off for Cashier and Stock keeper. The owner can tick it for anyone in **Users → Edit**.
+  - The server builds the file and refuses anyone without the permission. Every export is recorded in the Audit Log.
   - On the Billing screen the discount controls are folded under a quiet **More options** link (or **F6**), and close again for each new bill.
   - The discount lines appear on screen, in the payment box and on printed bills only when a discount was actually given. There is no "Discount ₹0.00".
   - **Settings → Discount on the billing screen** sets how this works:

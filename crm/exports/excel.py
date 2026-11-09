@@ -75,3 +75,18 @@ def sales_detailed(invoices, items, payments, include_profit=True):
                                 row['mode'], row['amount'], row['reference'], row['notes']])
     _tidy(workbook)
     return _to_bytes(workbook)
+
+
+def list_table(title, headers, rows):
+    """One on-screen list as a sheet: bold header, filter and widths (see _tidy); text never becomes a formula."""
+    from openpyxl.styles import Font
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = (''.join(ch for ch in title if ch not in '[]:*?/\\') or 'List')[:31]
+    _append(sheet, headers)
+    for cell in sheet[1]:
+        cell.font = Font(bold=True)
+    for row in rows:
+        _append(sheet, row)
+    _tidy(workbook)
+    return _to_bytes(workbook)

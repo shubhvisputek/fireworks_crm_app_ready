@@ -1,5 +1,6 @@
 """Roles, per-user data limits, and the operational features (approvals, cash closing, suppliers, backups...)."""
 import itertools
+import json
 import time
 import unittest
 
@@ -426,6 +427,47 @@ class FindingBillsAndCustomersTests(RoleTestCase):
         item = self.manager.get(f"/api/invoices/{sale['invoice_id']}").json()['items'][0]
         self.manager.post('/api/returns', {'invoice_id': sale['invoice_id'], 'items': [{'invoice_item_id': item['id'], 'qty': 1}]})
         self.assertEqual(bill()['returned_amount'], 100, 'a bill with a return is marked, so Edit is not offered')
+
+
+class ListExportTests(RoleTestCase):
+    BODY = {'title': 'Customers', 'headers': ['Customer', 'Phone', 'Due'],
+            'rows': [['Asha', '9800000001', 150.5], ['=HYPERLINK("http://evil")', '', 0]]}
+
+    def post_export(self, client, body=None):
+        return client.request('POST', '/api/export/list.xlsx', raw=json.dumps(body or self.BODY).encode(),
+                              headers={'Content-Type': 'application/json'})
+
+    def test_only_people_with_the_permission_can_export(self):
+        for role, client in self.clients.items():
+            with self.subTest(role=role):
+                expected = 200 if role in ('OWNER', 'MANAGER', 'ACCOUNTANT') else 403
+                self.assertEqual(self.post_export(client).status, expected)
+        # The owner can give it to one person.
+        extra = self.user('exportcashier', 'CASHIER')
+        preset = set(extra.get('/api/me').json()['user']['permissions'])
+        self.assertEqual(self.post_export(extra).status, 403)
+        self.owner.post(f'/api/users/{extra.user_id}', {'permissions': sorted(preset | {'lists.export'})})
+        extra.login('exportcashier', 'password12')
+        self.assertEqual(self.post_export(extra).status, 200)
+
+    def test_export_is_a_real_sheet_with_text_kept_as_text(self):
+        import io
+        from openpyxl import load_workbook
+        res = self.post_export(self.owner)
+        self.assertEqual(res.status, 200, res.body)
+        self.assertIn('customers-', res.headers.get('Content-Disposition', ''))
+        sheet = load_workbook(io.BytesIO(res.body)).active
+        rows = [[cell.value for cell in row] for row in sheet.iter_rows()]
+        self.assertEqual(rows[0], ['Customer', 'Phone', 'Due'])
+        self.assertEqual(rows[1], ['Asha', '9800000001', 150.5], 'amounts stay numbers')
+        self.assertTrue(str(rows[2][0]).startswith("'="), 'a formula-looking cell is written as text')
+        audit = self.owner.get('/api/audit?start=1900-01-01&end=2999-12-31').json()
+        entries = audit if isinstance(audit, list) else audit.get('entries', [])
+        self.assertTrue(any(e['action'] == 'List exported' for e in entries), 'exports are audit-logged')
+
+    def test_bad_or_huge_exports_are_refused(self):
+        self.assertEqual(self.post_export(self.owner, {'title': 'x', 'headers': [], 'rows': []}).status, 400)
+        self.assertEqual(self.post_export(self.owner, {'title': 'x', 'headers': ['a'] * 41, 'rows': []}).status, 400)
 
 class AuditAndDuesTests(RoleTestCase):
     def test_audit_log(self):

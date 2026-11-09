@@ -1,7 +1,7 @@
 // Small reusable view pieces.
 import { html } from '../core/html.js';
 import { money, num } from '../core/format.js';
-import { state } from '../core/state.js';
+import { can, state } from '../core/state.js';
 import { icon } from './icons.js';
 
 /** A friendly "nothing here" message with an optional next step (html button markup). */
@@ -11,18 +11,25 @@ export const emptyState = (title, text = '', action = '', iconName = 'empty') =>
 export const kpi = (label, value, sub = '') =>
   html`<div class="card kpi"><div class="label">${label}</div><div class="value">${value}</div>${sub ? html`<div class="sub">${sub}</div>` : ''}</div>`;
 
-const SEARCH_FROM = 10; // lists longer than this get a search box
-const PAGE_SIZE = 50; // ...and longer than this show 50 rows at a time with "Show more" (ui/lists.js)
+const PAGE_SIZE = 50; // long lists show 50 rows at a time with "Show more" (ui/lists.js)
 
-// opts.search=false when the page has its own search (Products).
-export function table(headers, rows, emptyText = 'Nothing to show yet.', { search = true } = {}) {
+/**
+ * Every list in the app: a search box, an Export to Excel button for people allowed to export, and "Show more" paging.
+ * opts.search=false where the page searches on the server instead (Sales) or the list is a short summary (dashboard);
+ * opts.exportable=false for lists not worth exporting.
+ */
+export function table(headers, rows, emptyText = 'Nothing to show yet.', { search = true, exportable = true } = {}) {
   const body = html`<div class="table-wrap"><table class="table"><thead><tr>${headers.map((h) => html`<th>${h}</th>`)}</tr></thead>
     <tbody>${rows.length ? rows : html`<tr class="empty-row"><td colspan="${headers.length}">${emptyState(emptyText)}</td></tr>`}</tbody></table></div>`;
-  if (rows.length <= SEARCH_FROM && rows.length <= PAGE_SIZE) return body;
+  const canExport = exportable && rows.length > 0 && can('lists.export');
+  const searchable = search && rows.length > 0;
+  if (!searchable && !canExport && rows.length <= PAGE_SIZE) return body;
   return html`<div class="list" data-list data-page-size="${PAGE_SIZE}">
-    ${search && rows.length > SEARCH_FROM ? html`<div class="list-tools"><label class="list-search">${icon('search')}
-      <input class="input" type="search" placeholder="Search this list" aria-label="Search this list" data-input="list.filter" autocomplete="off"></label>
-      <span class="list-count small muted" aria-live="polite"></span></div>` : html`<div class="list-tools"><span class="list-count small muted"></span></div>`}
+    <div class="list-tools">${searchable ? html`<label class="list-search">${icon('search')}
+      <input class="input" type="search" placeholder="Search this list" aria-label="Search this list" data-input="list.filter" autocomplete="off"></label>` : ''}
+      <span class="list-count small muted" aria-live="polite"></span>
+      ${canExport ? html`<button type="button" class="button list-export" data-action="list.export" title="Download this list (as filtered) for Excel">
+        ${icon('download')}<span>Export</span></button>` : ''}</div>
     ${body}<div class="list-footer"><span class="list-none muted small is-hidden">No matching rows.</span>
       <button type="button" class="button list-more is-hidden" data-action="list.more">Show more</button></div></div>`;
 }

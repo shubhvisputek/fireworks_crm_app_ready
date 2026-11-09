@@ -48,7 +48,7 @@ function recurringSection() {
       <button class="button" data-action="expenses.toggleRecurring" data-id="${r.id}" data-active="${r.active ? 0 : 1}">${r.active ? 'Pause' : 'Resume'}</button>
       <button class="button danger" data-action="expenses.deleteRecurring" data-id="${r.id}">Delete</button></div>` : ''}</td></tr>`);
   return html`<br><div class="card"><h3>Recurring Expenses</h3><p class="small muted">${RECURRING_NOTE}</p>
-    ${table(['Category', 'Vendor', 'Frequency', 'Period', 'Mode', 'Amount', 'Status', ''], rows, 'No recurring expenses yet.', { search: false })}</div>`;
+    ${table(['Category', 'Vendor', 'Frequency', 'Period', 'Mode', 'Amount', 'Status', ''], rows, 'No recurring expenses yet.')}</div>`;
 }
 
 async function render() {

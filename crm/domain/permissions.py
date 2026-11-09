@@ -39,6 +39,7 @@ class Permission(str, Enum):
     CASH_CLOSING_OWN = 'cash_closing.own'
     CASH_CLOSING_VIEW_ALL = 'cash_closing.view_all'
     REPORTS_EXPORT = 'reports.export'
+    LISTS_EXPORT = 'lists.export'                  # download any on-screen list (as the user sees it) to Excel
     BACKUP_DOWNLOAD = 'backup.download'
     BACKUP_RESTORE = 'backup.restore'
     SETTINGS_MANAGE = 'settings.manage'
@@ -61,6 +62,7 @@ PERMISSION_LABELS = {
     P.EXPENSES_MANAGE: 'Edit and delete everyone\'s expenses and recurring expenses',
     P.RECURRING_EXPENSES_VIEW: 'See recurring expenses', P.CASH_CLOSING_OWN: 'Close own cash drawer',
     P.CASH_CLOSING_VIEW_ALL: 'See everyone\'s cash closings', P.REPORTS_EXPORT: 'Excel and PDF reports',
+    P.LISTS_EXPORT: 'Export lists to Excel (customers, stock, suppliers, ...)',
     P.BACKUP_DOWNLOAD: 'Download the full data backup (every bill, customer and the audit log)', P.BACKUP_RESTORE: 'Restore backups (owner only)', P.SETTINGS_MANAGE: 'Business settings',
     P.USERS_MANAGE: 'Manage users', P.AUDIT_VIEW: 'Audit log',
 }
@@ -74,7 +76,7 @@ ROLE_PERMISSIONS = {
         P.SALES_VIEW_OWN, P.SALES_VIEW, P.SALES_EDIT, P.SALES_VOID, P.RETURNS_CREATE, P.PAYMENTS_COLLECT, P.DISCOUNT_APPROVE,
         P.PRODUCTS_LIST, P.CATALOG_MANAGE, P.INVENTORY_MANAGE, P.PURCHASES_MANAGE, P.SUPPLIERS_MANAGE,
         P.CUSTOMERS_VIEW, P.CUSTOMERS_MANAGE, P.DUES_VIEW, P.EXPENSES_VIEW, P.EXPENSES_CREATE, P.EXPENSES_MANAGE, P.REPORTS_EXPORT,
-        P.CASH_CLOSING_OWN, P.CASH_CLOSING_VIEW_ALL,
+        P.LISTS_EXPORT, P.CASH_CLOSING_OWN, P.CASH_CLOSING_VIEW_ALL,
     }),
     CASHIER: frozenset({
         P.DASHBOARD_VIEW, P.BILLING_CREATE, P.HELD_BILLS_USE, P.INVOICE_PRINT, P.SALES_VIEW_OWN, P.PRODUCTS_LIST,
@@ -86,7 +88,7 @@ ROLE_PERMISSIONS = {
     ACCOUNTANT: frozenset({
         P.DASHBOARD_VIEW, P.ANALYTICS_VIEW, P.PROFIT_VIEW, P.INVOICE_PRINT, P.SALES_VIEW_OWN, P.SALES_VIEW,
         P.PAYMENTS_COLLECT, P.PRODUCTS_LIST, P.CUSTOMERS_VIEW, P.DUES_VIEW, P.EXPENSES_VIEW, P.EXPENSES_CREATE,
-        P.EXPENSES_MANAGE, P.RECURRING_EXPENSES_VIEW, P.REPORTS_EXPORT, P.CASH_CLOSING_VIEW_ALL, P.SUPPLIERS_MANAGE,
+        P.EXPENSES_MANAGE, P.RECURRING_EXPENSES_VIEW, P.REPORTS_EXPORT, P.LISTS_EXPORT, P.CASH_CLOSING_VIEW_ALL, P.SUPPLIERS_MANAGE,
     }),
     # Accounts created before roles existed keep exactly the access they had.
     STAFF: frozenset({

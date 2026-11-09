@@ -182,15 +182,15 @@ function products(d) {
     ${profit ? card('Most profitable products', barList([...pr.top].sort((a, b) => b.profit - a.profit).map((x) => ({ label: productText(x), value: x.profit, color: color(x.category), sub: `${pct(x.gross_margin)} margin` })), { name: 'Gross profit' }),
       'Among the top 10 by revenue') : ''}
       <div class="grid">
-        ${card('Rising vs previous period', table(['Product', 'Before', 'Now', 'Change'], moverRows(pr.rising), 'No product sold more than last period.'))}
-        ${card('Falling vs previous period', table(['Product', 'Before', 'Now', 'Change'], moverRows(pr.falling), 'No product sold less than last period.'))}
+        ${card('Rising vs previous period', table(['Product', 'Before', 'Now', 'Change'], moverRows(pr.rising), 'No product sold more than last period.', { search: false }))}
+        ${card('Falling vs previous period', table(['Product', 'Before', 'Now', 'Change'], moverRows(pr.falling), 'No product sold less than last period.', { search: false }))}
       </div>
     </div>
     <div class="grid two">
       ${card('Top sellers', table(headers, productRows(pr.top), 'No sales in this period.'))}
       ${card('Slowest sellers', table(['Product', 'Sold', 'Stock', 'Last sold'], pr.slow_movers.map((x) => html`<tr><td>${x.name}${brandTag(x.brand)}<div class="small muted">${x.sku}</div></td>
         <td>${x.qty > 0 ? num(x.qty) : html`<span class="tag warn">None</span>`}</td><td>${num(x.stock)}</td><td>${x.last_sale ? shortDate(x.last_sale) : 'Never'}</td></tr>`),
-        'No active products.'), 'Every active product, fewest sold in this period first')}
+        'No active products.', { search: false }), 'Every active product, fewest sold in this period first')}
     </div>`;
 }
 
@@ -220,7 +220,7 @@ function team(d) {
       ['Person', 'Sales', 'Bills', 'Share'], staff.map((x) => [x.name, money(x.sales), x.bills, pct(x.share)])), 'Who made the bills')}
     ${card('Team details', table(['Person', 'Bills', 'Sales', 'Average bill', 'Discounts given', 'Deleted', 'Edited', 'Refunds'],
       staff.map((x) => html`<tr><td>${x.name}</td><td>${x.bills}</td><td>${money(x.sales)}</td><td>${money(x.avg_bill)}</td>
-        <td>${money(x.discounts)}</td><td>${x.voids}</td><td>${x.edits}</td><td>${money(x.refunds)}</td></tr>`), 'No activity in this period.'),
+        <td>${money(x.discounts)}</td><td>${x.voids}</td><td>${x.edits}</td><td>${money(x.refunds)}</td></tr>`), 'No activity in this period.', { search: false }),
       'Deleted and edited count the bills each person deleted or edited')}`;
 }
 
@@ -245,10 +245,10 @@ function stock(d) {
     <div class="grid two">
       ${card('Running out soon', table(['Product', 'Stock', 'Sells per day', 'Days left'], s.running_out.map((x) => html`<tr><td>${x.name}${brandTag(x.brand)}<div class="small muted">${x.sku}</div></td>
         <td>${num(x.stock)}</td><td>${num(x.per_day)}</td><td><span class="tag ${x.days_left <= 3 ? 'bad' : 'warn'}">${x.days_left <= 3 ? '⛔' : '⚠'} ${num(Math.floor(x.days_left))}</span></td></tr>`),
-        '✓ Nothing runs out in the next 14 days at the current pace.'), 'At the last 30 days’ pace')}
+        '✓ Nothing runs out in the next 14 days at the current pace.', { search: false }), 'At the last 30 days’ pace')}
       ${card('Not selling', table(['Product', 'Stock', 'Value', 'Last sold'], s.dead_stock.map((x) => html`<tr><td>${x.name}${brandTag(x.brand)}<div class="small muted">${x.sku}</div></td>
         <td>${num(x.stock)}</td><td>${money(x.retail_value)}</td><td>${x.last_sale ? shortDate(x.last_sale) : 'Never'}</td></tr>`),
-        `✓ Every product in stock sold in the last ${s.dead_stock_days} days.`), `In stock, no sale in ${s.dead_stock_days} days`)}
+        `✓ Every product in stock sold in the last ${s.dead_stock_days} days.`, { search: false }), `In stock, no sale in ${s.dead_stock_days} days`)}
     </div>`;
 }
 
