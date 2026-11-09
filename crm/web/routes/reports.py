@@ -25,6 +25,10 @@ def backup(ctx):
     return Response.download(filename, json.dumps(data, indent=2, default=str).encode(), 'application/json')
 
 
+def list_xlsx(ctx):
+    return Response.download(*ctx.services.exports.list_xlsx(ctx.user, ctx.body()), XLSX)
+
+
 def sales_xlsx(ctx):
     return Response.download(*ctx.services.exports.sales_xlsx(), XLSX)
 
@@ -42,6 +46,7 @@ def register(router):
     router.add('GET', '/api/analytics', analytics, P.ANALYTICS_VIEW)
     router.add('GET', '/api/insights', insights, (P.DASHBOARD_VIEW, P.ANALYTICS_VIEW))
     router.add('GET', '/api/backup', backup, P.BACKUP_DOWNLOAD)
+    router.add('POST', '/api/export/list.xlsx', list_xlsx, P.LISTS_EXPORT)
     router.add('GET', '/api/export/sales.xlsx', sales_xlsx, P.REPORTS_EXPORT)
     router.add('GET', '/api/export/sales-detailed.xlsx', sales_detailed_xlsx, P.REPORTS_EXPORT)
     router.add('GET', '/api/export/sales.pdf', sales_pdf, P.REPORTS_EXPORT)

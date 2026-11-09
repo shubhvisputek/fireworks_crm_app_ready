@@ -6,7 +6,8 @@ from crm.web.router import AUTHENTICATED, PUBLIC
 def shop_limits(ctx):
     settings = ctx.services.settings.get_settings()
     return {'max_discount_pct': settings.get('max_discount_pct'), 'receipt_format': settings.get('receipt_format', 'A4'),
-            'business_name': settings.get('business_name'), 'theme': settings.get('theme', 'classic')}
+            'business_name': settings.get('business_name'), 'theme': settings.get('theme', 'classic'),
+            'discount_controls': settings.get('discount_controls', 'hidden')}
 
 
 def me(ctx):

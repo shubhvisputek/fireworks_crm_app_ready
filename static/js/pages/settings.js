@@ -27,6 +27,9 @@ function render() {
     ${field({ name: 'invoice_footer', label: 'Invoice Footer', value: s.invoice_footer })}
     ${field({ name: 'receipt_format', label: 'Print after billing', type: 'select', value: s.receipt_format || 'A4', options: [['A4', 'A4 invoice (customer + seller copy)'], ['80mm', '80 mm thermal receipt']] })}
     ${field({ name: 'max_discount_pct', label: 'Max discount without manager approval (%)', type: 'number', value: s.max_discount_pct ?? 10, step: 1 })}
+    ${field({ name: 'discount_controls', label: 'Discount on the billing screen', type: 'select', value: s.discount_controls || 'hidden', options: [
+      ['hidden', 'Hidden until opened ("More options" or F6)'], ['shown', 'Always shown'],
+      ['managers', 'Only owner and managers (others need a manager to approve any discount)']] })}
     ${field({ name: 'storage_limit_kg', label: 'Licence storage limit (kg explosive content, 0 = off)', type: 'number', value: s.storage_limit_kg ?? 0, step: '0.1' })}
     ${field({ name: 'login_lockout', label: 'Wrong-password lockout', type: 'select', value: s.login_lockout === false ? '0' : '1',
       options: [['1', 'On: lock after 10 wrong passwords for 15 min'], ['0', 'Off: never lock anyone out']] })}
@@ -46,11 +49,12 @@ registerActions({
     const v = formValues(form);
     const settings = { business_name: v.business_name, license_number: v.license_number, phone: v.phone, email: v.email, address: v.address,
       invoice_prefix: v.invoice_prefix, invoice_footer: v.invoice_footer, receipt_format: v.receipt_format, max_discount_pct: v.max_discount_pct,
-      storage_limit_kg: v.storage_limit_kg, backup_keep_days: v.backup_keep_days, theme: v.theme, login_lockout: v.login_lockout === '1' };
+      storage_limit_kg: v.storage_limit_kg, backup_keep_days: v.backup_keep_days, theme: v.theme, discount_controls: v.discount_controls, login_lockout: v.login_lockout === '1' };
     const targets = { daily: v.daily, weekly: v.weekly, monthly: v.monthly, seasonal: v.seasonal, season_start: v.season_start, season_end: v.season_end };
     await api.post('/api/settings', { settings, targets });
     await loadReferenceData();
-    Object.assign(state.limits, { theme: settings.theme, receipt_format: settings.receipt_format, max_discount_pct: Number(settings.max_discount_pct), business_name: settings.business_name });
+    Object.assign(state.limits, { theme: settings.theme, receipt_format: settings.receipt_format, max_discount_pct: Number(settings.max_discount_pct), business_name: settings.business_name,
+      discount_controls: settings.discount_controls });
     toast('Settings saved');
   },
 });

@@ -192,6 +192,10 @@ try {
     await page.fill('#productSearch', 'rocket');
     await page.click('.product-result:has-text("Rocket Pack")');
     assert.equal(await page.locator('#cart .cart-row').count(), 2);
+    // Discounts are not on show: no buttons and no "Discount" line until "More options" is opened.
+    assert.equal(await page.locator('button[data-pct]').count(), 0);
+    assert.doesNotMatch(await page.innerText('#summary'), /discount/i);
+    await page.click('#summary button:has-text("More options")');
     await page.click('button[data-pct="10"]');
     assert.match(await page.innerText('#summary'), /495\.00/); // (300 + 250) - 10%
     await page.fill('#billName', 'Sneha');
@@ -544,6 +548,7 @@ try {
     // A 15% discount is above the 10% limit: a manager must approve it.
     await staff.fill('#productSearch', 'P-1');
     await staff.press('#productSearch', 'Enter');
+    await staff.keyboard.press('F6'); // opens the folded discount controls
     await staff.click('button[data-pct="15"]');
     await staff.click('button:has-text("Payment & Complete")');
     await staff.waitForSelector('#approvalBox');

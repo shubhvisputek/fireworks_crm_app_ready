@@ -9,10 +9,11 @@ export const bill = {
   customerPhone: '',
   editing: null, // {id, number, customerId, customerName, customerPhone, payments, notes} when re-issuing a bill
   heldRef: null, // the held bill this one was resumed from
+  discountOpen: false, // the discount controls are folded away until the cashier opens them, for each new bill
 };
 
 export function resetBill() {
-  Object.assign(bill, { items: [], discount: 0, customerName: '', customerPhone: '', editing: null, heldRef: null });
+  Object.assign(bill, { items: [], discount: 0, customerName: '', customerPhone: '', editing: null, heldRef: null, discountOpen: false });
 }
 
 export const billTotals = () => calculate(bill.items, bill.discount, findProduct);

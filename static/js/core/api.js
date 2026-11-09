@@ -55,4 +55,33 @@ export const api = {
   post: (path, body = {}) =>
     request(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
   upload: (path, formData) => request(path, { method: 'POST', body: formData }),
+  // POST JSON and save the file the server sends back (e.g. an Excel export).
+  download: async (path, body) => {
+    loading(1);
+    try {
+      const response = await fetch(path, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body) });
+      if (!response.ok) {
+        let data = {};
+        try {
+          data = await response.json();
+        } catch {
+          /* not JSON */
+        }
+        if (response.status === 401) onUnauthorized();
+        throw new ApiError(data.error || 'Download failed', response.status, data);
+      }
+      const name = /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') || '')?.[1] || 'download';
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(await response.blob());
+      link.download = name;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(link.href), 10_000);
+      return name;
+    } finally {
+      loading(-1);
+    }
+  },
 };
