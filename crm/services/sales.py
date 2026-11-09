@@ -144,13 +144,16 @@ class SalesService(Service):
 
         Returns the approver's user id when an approval was needed, otherwise None.
         """
-        limit = v.number(self.services.settings.get_settings().get('max_discount_pct'), 100)
+        settings = self.services.settings.get_settings()
+        managers_only = settings.get('discount_controls') == 'managers'  # then every discount needs a manager
+        limit = 0.0 if managers_only else v.number(settings.get('max_discount_pct'), 100)
         if not discount or not subtotal or discount / subtotal * 100 <= limit + 1e-9 or self.can(actor, P.DISCOUNT_APPROVE):
             return None
         approval = approval if isinstance(approval, dict) else {}
         if not approval.get('username'):
-            raise ValidationError(f'Discounts above {limit:g}% need approval from a manager.', code='DISCOUNT_APPROVAL_REQUIRED',
-                                  max_discount_pct=limit)
+            message = ('Discounts need approval from a manager.' if managers_only
+                       else f'Discounts above {limit:g}% need approval from a manager.')
+            raise ValidationError(message, code='DISCOUNT_APPROVAL_REQUIRED', max_discount_pct=limit)
         approver = self.services.auth.verify_credentials(approval.get('username'), approval.get('password'), purpose='discount')
         if not self.can(approver, P.DISCOUNT_APPROVE):
             raise ValidationError(f"{approver['username']} is not allowed to approve discounts.", code='DISCOUNT_APPROVAL_REQUIRED',

@@ -104,6 +104,13 @@ Still works the old way: `pip install -r requirements.txt` then `python server.p
   - Cost price, profit, margins and stock value are removed from every response unless the user has *See cost, profit and margins*.
   - Changing someone's role or permissions signs them out so the new access applies immediately.
 - **Discount approval:** discounts above the limit in Settings (default 10%) need a manager's username and password at the counter. The approver is recorded on the bill.
+- **Discounts are not advertised:**
+  - On the Billing screen the discount controls are folded under a quiet **More options** link (or **F6**), and close again for each new bill.
+  - The discount lines appear on screen, in the payment box and on printed bills only when a discount was actually given. There is no "Discount ₹0.00".
+  - **Settings → Discount on the billing screen** sets how this works:
+    - **Hidden until opened** (default)
+    - **Always shown**
+    - **Only owner and managers**: anyone else needs a manager to approve any discount, and the server enforces this.
 - **Day-end cash closing:** each cashier sees the cash, UPI and card they took since their last closing (minus refunds and cash expenses), enters the counted cash, and the difference is recorded. Managers and accountants see everyone's closings.
 - **Credit dues:** who owes what, oldest bills first, with **Collect**. (WhatsApp reminders are switched off for now; see below.)
 - **Suppliers:** supplier list with balance owed, purchase ledger and supplier payments. Purchases (GRN) can include several products and create the supplier automatically.

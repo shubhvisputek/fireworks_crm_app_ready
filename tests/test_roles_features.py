@@ -244,6 +244,33 @@ class DiscountApprovalTests(RoleTestCase):
         self.assertEqual(self.sell(self.manager, pid, discount=50).status, 200)  # managers may give any discount
 
 
+    def test_discounts_only_for_managers_setting(self):
+        self.assertEqual(self.owner.get('/api/me').json()['limits']['discount_controls'], 'hidden', 'folded away by default')
+        self.assertEqual(self.owner.post('/api/settings', {'settings': {'discount_controls': 'everyone'}}).status, 400)
+        self.assertEqual(self.owner.post('/api/settings', {'settings': {'discount_controls': 'managers'}}).status, 200)
+        try:
+            self.assertEqual(self.cashier.get('/api/me').json()['limits']['discount_controls'], 'managers')
+            pid = self.product(price=100)
+            small = self.sell(self.cashier, pid, discount=5)
+            self.assertEqual(small.json().get('code'), 'DISCOUNT_APPROVAL_REQUIRED', 'even a small discount needs a manager now')
+            self.assertEqual(self.sell(self.cashier, pid).status, 200, 'bills without discount are unaffected')
+            approved = self.sell(self.cashier, pid, discount=5, approval={'username': 'manager1', 'password': 'password12'})
+            self.assertEqual(approved.status, 200, approved.body)
+            self.assertEqual(self.sell(self.manager, pid, discount=5).status, 200, 'managers give discounts themselves')
+        finally:
+            self.owner.post('/api/settings', {'settings': {'discount_controls': 'hidden'}})
+        self.assertEqual(self.sell(self.cashier, self.product(price=100), discount=5).status, 200, 'back to the 10% limit')
+
+    def test_printouts_have_no_discount_line_without_a_discount(self):
+        pid = self.product(price=100)
+        plain = self.sell(self.cashier, pid).json()['invoice_id']
+        for path in (f'/api/invoice-pdf/{plain}', f'/api/invoice-receipt/{plain}'):
+            text = pdf_text(self.owner.get(path).body)
+            self.assertNotIn('Discount', text, path)
+            self.assertNotIn('Subtotal', text, path)
+        given = self.sell(self.cashier, pid, discount=5).json()['invoice_id']
+        self.assertIn('Discount Rs. 5.00', pdf_text(self.owner.get(f'/api/invoice-receipt/{given}').body))
+
 class CashClosingTests(RoleTestCase):
     def test_close_drawer(self):
         pid = self.product(price=100)

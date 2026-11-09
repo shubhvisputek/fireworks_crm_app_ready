@@ -246,3 +246,7 @@ body.is-loading::before{opacity:1;animation:loadbar 1.2s ease-in-out infinite}
 .nav button{font-size:17px}
 .nav-icon{width:20px;height:20px;flex-basis:20px}
 .nav-group{font-size:13px;letter-spacing:.07em;padding:16px 12px 6px}
+
+/* ---- Quiet text link (e.g. "More options" on the billing total): looks like a note, not a button ---- */
+.link-button{background:none;border:0;padding:6px 0;margin-top:4px;cursor:pointer;color:var(--muted);text-decoration:underline;text-underline-offset:2px}
+.link-button:hover{color:var(--text)}

@@ -82,13 +82,20 @@ function renderCart() {
         <span class="small muted">Search above or scan a barcode. Press Enter to add the first match.</span></div>`);
   const count = $('#itemCount');
   if (count) count.textContent = totals.lines.length ? `${totals.lines.length} item${totals.lines.length === 1 ? '' : 's'} • ${num(totals.lines.reduce((sum, l) => sum + Number(l.qty || 0), 0))} qty` : '';
+  // Discounts are not advertised on screen: the controls stay folded under a neutral "More options" (or F6) unless the
+  // owner chose "always shown", and the discount lines appear only once a discount is actually given.
+  const mode = discountMode();
+  const open = mode === 'shown' || (mode === 'hidden' && bill.discountOpen);
   setHtml($('#summary'), html`
-    <div class="between"><span>Total before discount</span><strong>${money(totals.subtotal)}</strong></div>
-    <div class="row wrap" style="margin:10px 0">${DISCOUNT_PRESETS.map((pct) => html`<button class="button" data-action="billing.discountPct" data-pct="${pct}">${pct}%</button>`)}
-      <button class="button" data-action="billing.discountPct" data-pct="0">Clear</button></div>
-    <label>Discount amount<input class="input" aria-label="Discount amount" type="number" min="0" max="${totals.subtotal}" step="0.01" value="${totals.discount}" data-change="billing.discount"></label>
-    <div class="between"><span>Discount</span><strong>${money(totals.discount)}</strong></div><hr>
-    <div class="bill-grand"><span>Total to pay</span><strong>${money(totals.total)}</strong></div>`);
+    ${totals.discount ? html`<div class="between"><span>Total before discount</span><strong>${money(totals.subtotal)}</strong></div>
+      <div class="between"><span>Discount</span><strong>−${money(totals.discount)}</strong></div>` : ''}
+    ${open ? html`<div class="discount-controls">
+      <div class="row wrap" style="margin:10px 0">${DISCOUNT_PRESETS.map((pct) => html`<button class="button" data-action="billing.discountPct" data-pct="${pct}">${pct}%</button>`)}
+        <button class="button" data-action="billing.discountPct" data-pct="0">Clear</button></div>
+      <label>Discount amount<input class="input" aria-label="Discount amount" type="number" min="0" max="${totals.subtotal}" step="0.01" value="${totals.discount}" data-change="billing.discount"></label></div>` : ''}
+    ${mode === 'hidden' ? html`<button type="button" class="link-button small muted" data-action="billing.toggleDiscount" aria-expanded="${open}">
+      ${open ? 'Fewer options' : 'More options'}</button>` : ''}
+    <hr><div class="bill-grand"><span>Total to pay</span><strong>${money(totals.total)}</strong></div>`);
   const hold = $('#holdBill');
   if (hold) hold.disabled = !bill.items.length;
 }
@@ -145,6 +152,14 @@ function paymentRow(amount = 0, mode = 'Cash') {
     <label>Amount<input class="input pay-amount" type="number" min="0" step="0.01" value="${amount}"></label></div>`;
 }
 
+// 'hidden' (folded away, the default), 'shown', or 'off' for people who may not give discounts when the owner chose
+// "managers only" (the server then refuses their discounts without a manager's approval).
+function discountMode() {
+  const setting = state.limits.discount_controls || 'hidden';
+  if (setting === 'managers') return can('discount.approve') ? 'hidden' : 'off';
+  return setting === 'shown' ? 'shown' : 'hidden';
+}
+
 // Discounts above the shop limit need a manager's username and password, unless this user may approve them.
 function needsApproval(totals) {
   if (!totals.discount || !totals.subtotal || can('discount.approve')) return false;
@@ -162,8 +177,8 @@ function openPayment() {
   const previousTotal = previous.reduce((sum, p) => sum + p.amount, 0);
   const rows = bill.editing && previous.length && Math.abs(previousTotal - totals.total) <= 0.01 ? previous.map((p) => paymentRow(p.amount, p.mode)) : [paymentRow(totals.total, 'Cash')];
   openModal(bill.editing ? `Edit ${bill.editing.number}` : 'Complete payment', html`<form data-submit="billing.finalize">
-    <div class="payment-totals"><div class="between"><span>Subtotal</span><strong>${money(totals.subtotal)}</strong></div>
-      <div class="between"><span>Discount</span><strong>−${money(totals.discount)}</strong></div>
+    <div class="payment-totals">${totals.discount ? html`<div class="between"><span>Subtotal</span><strong>${money(totals.subtotal)}</strong></div>
+      <div class="between"><span>Discount</span><strong>−${money(totals.discount)}</strong></div>` : ''}
       <div class="between payment-due"><span>Amount due</span><strong>${money(totals.total)}</strong></div></div>
     <div id="payRows" data-input="billing.cashChange">${rows}</div>
     <button type="button" class="button" data-action="billing.addPayment">+ Split payment</button>
@@ -287,6 +302,11 @@ registerActions({
     bill.items.splice(Number(el.dataset.index), 1);
     renderCart();
   },
+  'billing.toggleDiscount': () => {
+    bill.discountOpen = !bill.discountOpen;
+    renderCart();
+    if (bill.discountOpen) $('.discount-controls input')?.focus();
+  },
   'billing.discountPct': (el) => {
     bill.discount = Math.round(billTotals().subtotal * Number(el.dataset.pct)) / 100;
     renderCart();
@@ -345,6 +365,7 @@ document.addEventListener('keydown', (event) => {
     F2: () => !modalIsOpen() && $('#productSearch').focus(),
     F4: () => !modalIsOpen() && $('#billName').focus(),
     F8: () => !modalIsOpen() && $('#holdBill')?.click(),
+    F6: () => !modalIsOpen() && $('[data-action="billing.toggleDiscount"]')?.click(),
     F9: () => (paymentForm ? paymentForm.requestSubmit() : !modalIsOpen() && openPayment()),
   };
   if (keys[event.key]) {

@@ -108,7 +108,8 @@ class InvoicePdf:
         c.setFont('Helvetica-Bold', 7)
         c.line(x, y + 10 * mm, x + COLUMN_W, y + 10 * mm)
         y -= 2 * mm
-        totals = [('Subtotal', inv['subtotal']), ('Discount', inv['discount']), ('Total', inv['grand_total'])]
+        # Subtotal and Discount only when a discount was given: a printed "Discount 0.00" invites customers to ask for one.
+        totals = ([('Subtotal', inv['subtotal']), ('Discount', inv['discount'])] if inv['discount'] else []) + [('Total', inv['grand_total'])]
         if inv.get('returned_amount'):
             totals.append(('Returned', inv['returned_amount']))
         totals.append(('Received', inv['amount_received']))
@@ -186,7 +187,7 @@ def receipt_pdf(invoice, items, payments, settings):
     """80 mm thermal-printer receipt; the page is exactly as long as the content."""
     payments = money_paid(payments)
     line = 3.8 * mm
-    totals = [('Subtotal', invoice['subtotal']), ('Discount', invoice['discount']), ('TOTAL', invoice['grand_total'])]
+    totals = ([('Subtotal', invoice['subtotal']), ('Discount', invoice['discount'])] if invoice['discount'] else []) + [('TOTAL', invoice['grand_total'])]
     if invoice.get('returned_amount'):
         totals.append(('Returned', invoice['returned_amount']))
     totals += [('Received', invoice['amount_received'])] + ([('Credit due', invoice['outstanding'])] if invoice['outstanding'] > 0 else [])

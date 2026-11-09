@@ -9,6 +9,9 @@ TEXT_SETTINGS = ('business_name', 'address', 'license_number', 'phone', 'email',
 BOOL_SETTINGS = ('negative_stock_allowed', 'batch_tracking', 'login_lockout')
 NUMBER_SETTINGS = ('storage_limit_kg',)
 RECEIPT_FORMATS = ('A4', '80MM')
+# How the billing screen offers discounts: folded away until opened (default), always shown, or only to people who may
+# give any discount (owner/manager). With 'managers', anyone else needs a manager's approval for any discount.
+DISCOUNT_CONTROLS = ('HIDDEN', 'SHOWN', 'MANAGERS')  # stored lowercase
 THEMES = ('classic', 'clean', 'festive', 'counter', 'royal', 'soft')  # must match static/themes.css
 TARGET_FIELDS = ('daily', 'weekly', 'monthly', 'seasonal')
 
@@ -48,6 +51,8 @@ class SettingsService(Service):
             merged['max_discount_pct'] = pct
         if 'receipt_format' in incoming:
             merged['receipt_format'] = '80mm' if v.one_of(incoming['receipt_format'], RECEIPT_FORMATS, 'Receipt format') == '80MM' else 'A4'
+        if 'discount_controls' in incoming:
+            merged['discount_controls'] = v.one_of(incoming['discount_controls'], DISCOUNT_CONTROLS, 'Discount on the billing screen').lower()
         if 'theme' in incoming:
             theme = v.text(incoming['theme'], 20).lower()
             if theme not in THEMES:
